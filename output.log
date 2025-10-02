@@ -1,0 +1,43 @@
+/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/requests/__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+  warnings.warn(
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 118, in main
+    torch.multiprocessing.set_start_method('spawn', force=True)
+    ^^^^^
+NameError: name 'torch' is not defined
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+E0927 02:30:10.112000 218718 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 0 (pid: 218783) of binary: /home/u5t/chuhansong.u5t/miniconda3/envs/hescape/bin/python
+Traceback (most recent call last):
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+experiments/hescape_pretrain/train.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2025-09-27_02:30:10
+  host      : nid001029
+  rank      : 0 (local_rank: 0)
+  exitcode  : 1 (pid: 218783)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

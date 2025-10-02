@@ -1,0 +1,1079 @@
+W0928 19:52:15.392000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py:766] 
+W0928 19:52:15.392000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py:766] *****************************************
+W0928 19:52:15.392000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py:766] Setting OMP_NUM_THREADS environment variable for each process to be 1 in default, to avoid your system being overloaded, please further tune the variable for optimal performance in your application as needed. 
+W0928 19:52:15.392000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py:766] *****************************************
+/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/requests/__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+  warnings.warn(
+/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/requests/__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+  warnings.warn(
+/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/requests/__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+  warnings.warn(
+/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/requests/__init__.py:86: RequestsDependencyWarning: Unable to find acceptable character detection dependency (chardet or charset_normalizer).
+  warnings.warn(
+[rank: 1] Seed set to 24442
+[rank: 3] Seed set to 24442
+{
+│   'devices_per_job': 4,
+│   'model': {
+│   │   'litmodule': {
+│   │   │   '_target_': 'hescape.modules.pretrain_module.PretrainModule',
+│   │   │   '_partial_': True,
+│   │   │   'input_genes': 343,
+│   │   │   'embed_dim': 128,
+│   │   │   'img_enc_name': 'uni',
+│   │   │   'gene_enc_name': 'scFoundation',
+│   │   │   'loss': 'CLIP',
+│   │   │   'img_finetune': True,
+│   │   │   'gene_finetune': False,
+│   │   │   'img_proj': 'moe',
+│   │   │   'gene_proj': 'linear',
+│   │   │   'n_tissue': None,
+│   │   │   'n_region': None,
+│   │   │   'image_size': 224,
+│   │   │   'temperature': 0.07,
+│   │   │   'lr': 1e-05,
+│   │   │   'weight_decay': 0.01
+│   │   },
+│   │   'optimizer': {'lr': 1e-05, 'weight_decay': 0.01},
+│   │   'cosine_scheduler': {
+│   │   │   '_target_': 'hescape.modules._utils._get_cosine_schedule_with_warmup_lr_lambda',
+│   │   │   '_partial_': True,
+│   │   │   'num_warmup_steps': 780,
+│   │   │   'num_cycles': 0.5,
+│   │   │   'num_training_steps': 20000
+│   │   },
+│   │   'monitor': 'val_loss',
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'}
+│   },
+│   'training': {
+│   │   'lightning': {
+│   │   │   'trainer': {
+│   │   │   │   '_target_': 'pytorch_lightning.Trainer',
+│   │   │   │   '_partial_': True,
+│   │   │   │   'max_steps': 20000,
+│   │   │   │   'enable_progress_bar': True,
+│   │   │   │   'devices': 4,
+│   │   │   │   'num_nodes': 1,
+│   │   │   │   'strategy': {
+│   │   │   │   │   '_target_': 'pytorch_lightning.strategies.DDPStrategy',
+│   │   │   │   │   'find_unused_parameters': True,
+│   │   │   │   │   'process_group_backend': 'nccl'
+│   │   │   │   },
+│   │   │   │   'precision': 'bf16-mixed',
+│   │   │   │   'log_every_n_steps': 10,
+│   │   │   │   'val_check_interval': 1.0,
+│   │   │   │   'sync_batchnorm': True,
+│   │   │   │   'accelerator': 'gpu',
+│   │   │   │   'gradient_clip_val': 5,
+│   │   │   │   'num_sanity_val_steps': 2,
+│   │   │   │   'profiler': None
+│   │   │   }
+│   │   },
+│   │   'train': True,
+│   │   'test': False,
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'},
+│   │   'callbacks': {
+│   │   │   'model_checkpoint': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.ModelCheckpoint',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'save_last': True,
+│   │   │   │   'mode': 'min',
+│   │   │   │   'save_top_k': 2,
+│   │   │   │   'dirpath': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/checkpoints',
+│   │   │   │   'auto_insert_metric_name': True
+│   │   │   },
+│   │   │   'early_stopping': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.EarlyStopping',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'min_delta': 0.01,
+│   │   │   │   'patience': 5,
+│   │   │   │   'mode': 'min'
+│   │   │   },
+│   │   │   'lr_monitor': {'_target_': 'pytorch_lightning.callbacks.LearningRateMonitor', 'logging_interval': 'step'}
+│   │   },
+│   │   'logger': {
+│   │   │   'csv': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.csv_logs.CSVLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/csv_logger',
+│   │   │   │   'name': '',
+│   │   │   │   'prefix': ''
+│   │   │   },
+│   │   │   'wandb': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.wandb.WandbLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/wandb_logger',
+│   │   │   │   'log_model': False,
+│   │   │   │   'project': 'hescape_training',
+│   │   │   │   'name': 'local'
+│   │   │   }
+│   │   }
+│   },
+│   'paths': {
+│   │   'anatomy': {
+│   │   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   │   'train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   │   'val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   │   'test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   │   'output': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local',
+│   │   │   'pretrain_weights': {
+│   │   │   │   'drvi_model_dir': 'drvi_human_lung_healthy_panel',
+│   │   │   │   'data_gene_reference_path': '../human_lung_healthy_panel/nicheformer_reference.h5ad'
+│   │   │   }
+│   │   },
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'base_output_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results',
+│   │   'pretrain_weights': {
+│   │   │   'img_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/image',
+│   │   │   'gene_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene',
+│   │   │   'base_data_gene_reference_path': '/p/project1/hai_spatial_clip/hescape/data'
+│   │   }
+│   },
+│   'datamodule': {
+│   │   '_target_': 'hescape.data_modules.image_gexp_dataset.ImageGexpDataModule',
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'img_model_name': 'uni',
+│   │   'gene_model_name': 'scFoundation',
+│   │   'num_workers': 4,
+│   │   'pin_memory': True,
+│   │   'persistent_workers': True,
+│   │   'batch_size': 64,
+│   │   'source_key': 'tissue',
+│   │   'source_value': ['lung'],
+│   │   'split_key': 'name',
+│   │   'split_train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   'split_val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   'split_test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   'input_genes': 343,
+│   │   'seed': 24442,
+│   │   'data_gene_reference_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad'
+│   },
+│   'name': 'hescape_default_training'
+}
+{
+│   'devices_per_job': 4,
+│   'model': {
+│   │   'litmodule': {
+│   │   │   '_target_': 'hescape.modules.pretrain_module.PretrainModule',
+│   │   │   '_partial_': True,
+│   │   │   'input_genes': 343,
+│   │   │   'embed_dim': 128,
+│   │   │   'img_enc_name': 'uni',
+│   │   │   'gene_enc_name': 'scFoundation',
+│   │   │   'loss': 'CLIP',
+│   │   │   'img_finetune': True,
+│   │   │   'gene_finetune': False,
+│   │   │   'img_proj': 'moe',
+│   │   │   'gene_proj': 'linear',
+│   │   │   'n_tissue': None,
+│   │   │   'n_region': None,
+│   │   │   'image_size': 224,
+│   │   │   'temperature': 0.07,
+│   │   │   'lr': 1e-05,
+│   │   │   'weight_decay': 0.01
+│   │   },
+│   │   'optimizer': {'lr': 1e-05, 'weight_decay': 0.01},
+│   │   'cosine_scheduler': {
+│   │   │   '_target_': 'hescape.modules._utils._get_cosine_schedule_with_warmup_lr_lambda',
+│   │   │   '_partial_': True,
+│   │   │   'num_warmup_steps': 780,
+│   │   │   'num_cycles': 0.5,
+│   │   │   'num_training_steps': 20000
+│   │   },
+│   │   'monitor': 'val_loss',
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'}
+│   },
+│   'training': {
+│   │   'lightning': {
+│   │   │   'trainer': {
+│   │   │   │   '_target_': 'pytorch_lightning.Trainer',
+│   │   │   │   '_partial_': True,
+│   │   │   │   'max_steps': 20000,
+│   │   │   │   'enable_progress_bar': True,
+│   │   │   │   'devices': 4,
+│   │   │   │   'num_nodes': 1,
+│   │   │   │   'strategy': {
+│   │   │   │   │   '_target_': 'pytorch_lightning.strategies.DDPStrategy',
+│   │   │   │   │   'find_unused_parameters': True,
+│   │   │   │   │   'process_group_backend': 'nccl'
+│   │   │   │   },
+│   │   │   │   'precision': 'bf16-mixed',
+│   │   │   │   'log_every_n_steps': 10,
+│   │   │   │   'val_check_interval': 1.0,
+│   │   │   │   'sync_batchnorm': True,
+│   │   │   │   'accelerator': 'gpu',
+│   │   │   │   'gradient_clip_val': 5,
+│   │   │   │   'num_sanity_val_steps': 2,
+│   │   │   │   'profiler': None
+│   │   │   }
+│   │   },
+│   │   'train': True,
+│   │   'test': False,
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'},
+│   │   'callbacks': {
+│   │   │   'model_checkpoint': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.ModelCheckpoint',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'save_last': True,
+│   │   │   │   'mode': 'min',
+│   │   │   │   'save_top_k': 2,
+│   │   │   │   'dirpath': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/checkpoints',
+│   │   │   │   'auto_insert_metric_name': True
+│   │   │   },
+│   │   │   'early_stopping': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.EarlyStopping',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'min_delta': 0.01,
+│   │   │   │   'patience': 5,
+│   │   │   │   'mode': 'min'
+│   │   │   },
+│   │   │   'lr_monitor': {'_target_': 'pytorch_lightning.callbacks.LearningRateMonitor', 'logging_interval': 'step'}
+│   │   },
+│   │   'logger': {
+│   │   │   'csv': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.csv_logs.CSVLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/csv_logger',
+│   │   │   │   'name': '',
+│   │   │   │   'prefix': ''
+│   │   │   },
+│   │   │   'wandb': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.wandb.WandbLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/wandb_logger',
+│   │   │   │   'log_model': False,
+│   │   │   │   'project': 'hescape_training',
+│   │   │   │   'name': 'local'
+│   │   │   }
+│   │   }
+│   },
+│   'paths': {
+│   │   'anatomy': {
+│   │   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   │   'train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   │   'val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   │   'test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   │   'output': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local',
+│   │   │   'pretrain_weights': {
+│   │   │   │   'drvi_model_dir': 'drvi_human_lung_healthy_panel',
+│   │   │   │   'data_gene_reference_path': '../human_lung_healthy_panel/nicheformer_reference.h5ad'
+│   │   │   }
+│   │   },
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'base_output_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results',
+│   │   'pretrain_weights': {
+│   │   │   'img_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/image',
+│   │   │   'gene_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene',
+│   │   │   'base_data_gene_reference_path': '/p/project1/hai_spatial_clip/hescape/data'
+│   │   }
+│   },
+│   'datamodule': {
+│   │   '_target_': 'hescape.data_modules.image_gexp_dataset.ImageGexpDataModule',
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'img_model_name': 'uni',
+│   │   'gene_model_name': 'scFoundation',
+│   │   'num_workers': 4,
+│   │   'pin_memory': True,
+│   │   'persistent_workers': True,
+│   │   'batch_size': 64,
+│   │   'source_key': 'tissue',
+│   │   'source_value': ['lung'],
+│   │   'split_key': 'name',
+│   │   'split_train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   'split_val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   'split_test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   'input_genes': 343,
+│   │   'seed': 24442,
+│   │   'data_gene_reference_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad'
+│   },
+│   'name': 'hescape_default_training'
+}
+[rank: 0] Seed set to 24442
+{
+│   'devices_per_job': 4,
+│   'model': {
+│   │   'litmodule': {
+│   │   │   '_target_': 'hescape.modules.pretrain_module.PretrainModule',
+│   │   │   '_partial_': True,
+│   │   │   'input_genes': 343,
+│   │   │   'embed_dim': 128,
+│   │   │   'img_enc_name': 'uni',
+│   │   │   'gene_enc_name': 'scFoundation',
+│   │   │   'loss': 'CLIP',
+│   │   │   'img_finetune': True,
+│   │   │   'gene_finetune': False,
+│   │   │   'img_proj': 'moe',
+│   │   │   'gene_proj': 'linear',
+│   │   │   'n_tissue': None,
+│   │   │   'n_region': None,
+│   │   │   'image_size': 224,
+│   │   │   'temperature': 0.07,
+│   │   │   'lr': 1e-05,
+│   │   │   'weight_decay': 0.01
+│   │   },
+│   │   'optimizer': {'lr': 1e-05, 'weight_decay': 0.01},
+│   │   'cosine_scheduler': {
+│   │   │   '_target_': 'hescape.modules._utils._get_cosine_schedule_with_warmup_lr_lambda',
+│   │   │   '_partial_': True,
+│   │   │   'num_warmup_steps': 780,
+│   │   │   'num_cycles': 0.5,
+│   │   │   'num_training_steps': 20000
+│   │   },
+│   │   'monitor': 'val_loss',
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'}
+│   },
+│   'training': {
+│   │   'lightning': {
+│   │   │   'trainer': {
+│   │   │   │   '_target_': 'pytorch_lightning.Trainer',
+│   │   │   │   '_partial_': True,
+│   │   │   │   'max_steps': 20000,
+│   │   │   │   'enable_progress_bar': True,
+│   │   │   │   'devices': 4,
+│   │   │   │   'num_nodes': 1,
+│   │   │   │   'strategy': {
+│   │   │   │   │   '_target_': 'pytorch_lightning.strategies.DDPStrategy',
+│   │   │   │   │   'find_unused_parameters': True,
+│   │   │   │   │   'process_group_backend': 'nccl'
+│   │   │   │   },
+│   │   │   │   'precision': 'bf16-mixed',
+│   │   │   │   'log_every_n_steps': 10,
+│   │   │   │   'val_check_interval': 1.0,
+│   │   │   │   'sync_batchnorm': True,
+│   │   │   │   'accelerator': 'gpu',
+│   │   │   │   'gradient_clip_val': 5,
+│   │   │   │   'num_sanity_val_steps': 2,
+│   │   │   │   'profiler': None
+│   │   │   }
+│   │   },
+│   │   'train': True,
+│   │   'test': False,
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'},
+│   │   'callbacks': {
+│   │   │   'model_checkpoint': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.ModelCheckpoint',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'save_last': True,
+│   │   │   │   'mode': 'min',
+│   │   │   │   'save_top_k': 2,
+│   │   │   │   'dirpath': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/checkpoints',
+│   │   │   │   'auto_insert_metric_name': True
+│   │   │   },
+│   │   │   'early_stopping': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.EarlyStopping',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'min_delta': 0.01,
+│   │   │   │   'patience': 5,
+│   │   │   │   'mode': 'min'
+│   │   │   },
+│   │   │   'lr_monitor': {'_target_': 'pytorch_lightning.callbacks.LearningRateMonitor', 'logging_interval': 'step'}
+│   │   },
+│   │   'logger': {
+│   │   │   'csv': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.csv_logs.CSVLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/csv_logger',
+│   │   │   │   'name': '',
+│   │   │   │   'prefix': ''
+│   │   │   },
+│   │   │   'wandb': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.wandb.WandbLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/wandb_logger',
+│   │   │   │   'log_model': False,
+│   │   │   │   'project': 'hescape_training',
+│   │   │   │   'name': 'local'
+│   │   │   }
+│   │   }
+│   },
+│   'paths': {
+│   │   'anatomy': {
+│   │   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   │   'train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   │   'val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   │   'test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   │   'output': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local',
+│   │   │   'pretrain_weights': {
+│   │   │   │   'drvi_model_dir': 'drvi_human_lung_healthy_panel',
+│   │   │   │   'data_gene_reference_path': '../human_lung_healthy_panel/nicheformer_reference.h5ad'
+│   │   │   }
+│   │   },
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'base_output_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results',
+│   │   'pretrain_weights': {
+│   │   │   'img_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/image',
+│   │   │   'gene_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene',
+│   │   │   'base_data_gene_reference_path': '/p/project1/hai_spatial_clip/hescape/data'
+│   │   }
+│   },
+│   'datamodule': {
+│   │   '_target_': 'hescape.data_modules.image_gexp_dataset.ImageGexpDataModule',
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'img_model_name': 'uni',
+│   │   'gene_model_name': 'scFoundation',
+│   │   'num_workers': 4,
+│   │   'pin_memory': True,
+│   │   'persistent_workers': True,
+│   │   'batch_size': 64,
+│   │   'source_key': 'tissue',
+│   │   'source_value': ['lung'],
+│   │   'split_key': 'name',
+│   │   'split_train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   'split_val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   'split_test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   'input_genes': 343,
+│   │   'seed': 24442,
+│   │   'data_gene_reference_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad'
+│   },
+│   'name': 'hescape_default_training'
+}
+[rank: 2] Seed set to 24442
+{
+│   'devices_per_job': 4,
+│   'model': {
+│   │   'litmodule': {
+│   │   │   '_target_': 'hescape.modules.pretrain_module.PretrainModule',
+│   │   │   '_partial_': True,
+│   │   │   'input_genes': 343,
+│   │   │   'embed_dim': 128,
+│   │   │   'img_enc_name': 'uni',
+│   │   │   'gene_enc_name': 'scFoundation',
+│   │   │   'loss': 'CLIP',
+│   │   │   'img_finetune': True,
+│   │   │   'gene_finetune': False,
+│   │   │   'img_proj': 'moe',
+│   │   │   'gene_proj': 'linear',
+│   │   │   'n_tissue': None,
+│   │   │   'n_region': None,
+│   │   │   'image_size': 224,
+│   │   │   'temperature': 0.07,
+│   │   │   'lr': 1e-05,
+│   │   │   'weight_decay': 0.01
+│   │   },
+│   │   'optimizer': {'lr': 1e-05, 'weight_decay': 0.01},
+│   │   'cosine_scheduler': {
+│   │   │   '_target_': 'hescape.modules._utils._get_cosine_schedule_with_warmup_lr_lambda',
+│   │   │   '_partial_': True,
+│   │   │   'num_warmup_steps': 780,
+│   │   │   'num_cycles': 0.5,
+│   │   │   'num_training_steps': 20000
+│   │   },
+│   │   'monitor': 'val_loss',
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'}
+│   },
+│   'training': {
+│   │   'lightning': {
+│   │   │   'trainer': {
+│   │   │   │   '_target_': 'pytorch_lightning.Trainer',
+│   │   │   │   '_partial_': True,
+│   │   │   │   'max_steps': 20000,
+│   │   │   │   'enable_progress_bar': True,
+│   │   │   │   'devices': 4,
+│   │   │   │   'num_nodes': 1,
+│   │   │   │   'strategy': {
+│   │   │   │   │   '_target_': 'pytorch_lightning.strategies.DDPStrategy',
+│   │   │   │   │   'find_unused_parameters': True,
+│   │   │   │   │   'process_group_backend': 'nccl'
+│   │   │   │   },
+│   │   │   │   'precision': 'bf16-mixed',
+│   │   │   │   'log_every_n_steps': 10,
+│   │   │   │   'val_check_interval': 1.0,
+│   │   │   │   'sync_batchnorm': True,
+│   │   │   │   'accelerator': 'gpu',
+│   │   │   │   'gradient_clip_val': 5,
+│   │   │   │   'num_sanity_val_steps': 2,
+│   │   │   │   'profiler': None
+│   │   │   }
+│   │   },
+│   │   'train': True,
+│   │   'test': False,
+│   │   'evaluations': {'batch_key': 'id', 'label_key': 'organ'},
+│   │   'callbacks': {
+│   │   │   'model_checkpoint': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.ModelCheckpoint',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'save_last': True,
+│   │   │   │   'mode': 'min',
+│   │   │   │   'save_top_k': 2,
+│   │   │   │   'dirpath': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/checkpoints',
+│   │   │   │   'auto_insert_metric_name': True
+│   │   │   },
+│   │   │   'early_stopping': {
+│   │   │   │   '_target_': 'pytorch_lightning.callbacks.EarlyStopping',
+│   │   │   │   'monitor': 'val_loss',
+│   │   │   │   'min_delta': 0.01,
+│   │   │   │   'patience': 5,
+│   │   │   │   'mode': 'min'
+│   │   │   },
+│   │   │   'lr_monitor': {'_target_': 'pytorch_lightning.callbacks.LearningRateMonitor', 'logging_interval': 'step'}
+│   │   },
+│   │   'logger': {
+│   │   │   'csv': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.csv_logs.CSVLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/csv_logger',
+│   │   │   │   'name': '',
+│   │   │   │   'prefix': ''
+│   │   │   },
+│   │   │   'wandb': {
+│   │   │   │   '_target_': 'pytorch_lightning.loggers.wandb.WandbLogger',
+│   │   │   │   'save_dir': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/wandb_logger',
+│   │   │   │   'log_model': False,
+│   │   │   │   'project': 'hescape_training',
+│   │   │   │   'name': 'local'
+│   │   │   }
+│   │   }
+│   },
+│   'paths': {
+│   │   'anatomy': {
+│   │   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   │   'train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   │   'val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   │   'test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   │   'output': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local',
+│   │   │   'pretrain_weights': {
+│   │   │   │   'drvi_model_dir': 'drvi_human_lung_healthy_panel',
+│   │   │   │   'data_gene_reference_path': '../human_lung_healthy_panel/nicheformer_reference.h5ad'
+│   │   │   }
+│   │   },
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'base_output_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results',
+│   │   'pretrain_weights': {
+│   │   │   'img_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/image',
+│   │   │   'gene_enc_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene',
+│   │   │   'base_data_gene_reference_path': '/p/project1/hai_spatial_clip/hescape/data'
+│   │   }
+│   },
+│   'datamodule': {
+│   │   '_target_': 'hescape.data_modules.image_gexp_dataset.ImageGexpDataModule',
+│   │   'dataset_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel',
+│   │   'dataset_name': 'human-lung-healthy-panel',
+│   │   'data_files_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data',
+│   │   'img_model_name': 'uni',
+│   │   'gene_model_name': 'scFoundation',
+│   │   'num_workers': 4,
+│   │   'pin_memory': True,
+│   │   'persistent_workers': True,
+│   │   'batch_size': 64,
+│   │   'source_key': 'tissue',
+│   │   'source_value': ['lung'],
+│   │   'split_key': 'name',
+│   │   'split_train_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/train.csv',
+│   │   'split_val_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/val.csv',
+│   │   'split_test_csv': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/test.csv',
+│   │   'input_genes': 343,
+│   │   'seed': 24442,
+│   │   'data_gene_reference_path': '/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad'
+│   },
+│   'name': 'hescape_default_training'
+}
+INFO     Available GPUs: 4                                                                                                                            
+INFO     Available GPUs: 4                                                                                                                            
+INFO     Available GPUs: 4                                                                                                                            
+INFO     Available GPUs: 4                                                                                                                            
+INFO     Device 0: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 1: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 2: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 3: NVIDIA GH200 120GB                                                                                                                 
+[rank: 3] Seed set to 24442
+INFO     Instantiating datamodule...                                                                                                                  
+[2025-09-28 19:52:29,144][datasets][INFO] - JAX version 0.4.20 available.
+INFO     Device 0: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 1: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 2: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 3: NVIDIA GH200 120GB                                                                                                                 
+[rank: 1] Seed set to 24442
+INFO     Instantiating datamodule...                                                                                                                  
+[2025-09-28 19:52:29,189][datasets][INFO] - JAX version 0.4.20 available.
+INFO     Device 0: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 1: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 2: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 3: NVIDIA GH200 120GB                                                                                                                 
+[rank: 2] Seed set to 24442
+INFO     Instantiating datamodule...                                                                                                                  
+INFO     Device 0: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 1: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 2: NVIDIA GH200 120GB                                                                                                                 
+INFO     Device 3: NVIDIA GH200 120GB                                                                                                                 
+[rank: 0] Seed set to 24442
+INFO     Instantiating datamodule...                                                                                                                  
+[2025-09-28 19:52:29,215][datasets][INFO] - JAX version 0.4.20 available.
+[2025-09-28 19:52:29,228][datasets][INFO] - JAX version 0.4.20 available.
+INFO     Instantiating model...                                                                                                                       
+INFO     LOCAL RANK: 3                                                                                                                                
+INFO     GLOBAL RANK: 3                                                                                                                               
+INFO     WORLD SIZE: 4                                                                                                                                
+INFO     CUDA DEVICE NAME: NVIDIA GH200 120GB                                                                                                         
+INFO     CUDA DEVICE INDEX: 0                                                                                                                         
+INFO     CUDA DEVICE COUNT: 4                                                                                                                         
+INFO     Instantiating model...                                                                                                                       
+INFO     Instantiating model...                                                                                                                       
+INFO     LOCAL RANK: 1                                                                                                                                
+INFO     GLOBAL RANK: 1                                                                                                                               
+INFO     WORLD SIZE: 4                                                                                                                                
+INFO     CUDA DEVICE NAME: NVIDIA GH200 120GB                                                                                                         
+INFO     CUDA DEVICE INDEX: 0                                                                                                                         
+INFO     CUDA DEVICE COUNT: 4                                                                                                                         
+INFO     LOCAL RANK: 2                                                                                                                                
+INFO     GLOBAL RANK: 2                                                                                                                               
+INFO     WORLD SIZE: 4                                                                                                                                
+INFO     CUDA DEVICE NAME: NVIDIA GH200 120GB                                                                                                         
+INFO     CUDA DEVICE INDEX: 0                                                                                                                         
+INFO     CUDA DEVICE COUNT: 4                                                                                                                         
+INFO     Instantiating model...                                                                                                                       
+INFO     LOCAL RANK: 0                                                                                                                                
+INFO     GLOBAL RANK: 0                                                                                                                               
+INFO     WORLD SIZE: 4                                                                                                                                
+INFO     CUDA DEVICE NAME: NVIDIA GH200 120GB                                                                                                         
+INFO     CUDA DEVICE INDEX: 0                                                                                                                         
+INFO     CUDA DEVICE COUNT: 4                                                                                                                         
+Successfully loaded weights for uni
+Successfully loaded weights for uni
+Successfully loaded weights for uni
+Successfully loaded weights for uni
+{'mask_gene_name': False, 'gene_num': 19266, 'seq_len': 19266, 'encoder': {'hidden_dim': 768, 'depth': 12, 'heads': 12, 'dim_head': 64, 'seq_len': 19266, 'module_type': 'transformer', 'norm_first': False}, 'decoder': {'hidden_dim': 512, 'depth': 6, 'heads': 8, 'dim_head': 64, 'module_type': 'performer', 'seq_len': 19266, 'norm_first': False}, 'n_class': 104, 'pad_token_id': 103, 'mask_token_id': 102, 'bin_num': 100, 'bin_alpha': 1.0, 'rawcount': True, 'model': 'mae_autobin', 'test_valid_train_idx_dict': '/nfs_beijing/minsheng/data/os10000w-new/global_shuffle/meta.csv.train_set_idx_dict.pt', 'valid_data_path': '/nfs_beijing/minsheng/data/valid_count_10w.npz', 'num_tokens': 13, 'train_data_path': None, 'isPanA': False, 'isPlanA1': False, 'max_files_to_load': 5, 'bin_type': 'auto_bin', 'value_mask_prob': 0.3, 'zero_mask_prob': 0.03, 'replace_prob': 0.8, 'random_token_prob': 0.1, 'mask_ignore_token_ids': [0], 'decoder_add_zero': True, 'mae_encoder_max_seq_len': 15000, 'isPlanA': False, 'mask_prob': 0.3, 'model_type': 'mae_autobin', 'pos_embed': False, 'device': 'cuda'}
+{'mask_gene_name': False, 'gene_num': 19266, 'seq_len': 19266, 'encoder': {'hidden_dim': 768, 'depth': 12, 'heads': 12, 'dim_head': 64, 'seq_len': 19266, 'module_type': 'transformer', 'norm_first': False}, 'decoder': {'hidden_dim': 512, 'depth': 6, 'heads': 8, 'dim_head': 64, 'module_type': 'performer', 'seq_len': 19266, 'norm_first': False}, 'n_class': 104, 'pad_token_id': 103, 'mask_token_id': 102, 'bin_num': 100, 'bin_alpha': 1.0, 'rawcount': True, 'model': 'mae_autobin', 'test_valid_train_idx_dict': '/nfs_beijing/minsheng/data/os10000w-new/global_shuffle/meta.csv.train_set_idx_dict.pt', 'valid_data_path': '/nfs_beijing/minsheng/data/valid_count_10w.npz', 'num_tokens': 13, 'train_data_path': None, 'isPanA': False, 'isPlanA1': False, 'max_files_to_load': 5, 'bin_type': 'auto_bin', 'value_mask_prob': 0.3, 'zero_mask_prob': 0.03, 'replace_prob': 0.8, 'random_token_prob': 0.1, 'mask_ignore_token_ids': [0], 'decoder_add_zero': True, 'mae_encoder_max_seq_len': 15000, 'isPlanA': False, 'mask_prob': 0.3, 'model_type': 'mae_autobin', 'pos_embed': False, 'device': 'cuda'}
+{'mask_gene_name': False, 'gene_num': 19266, 'seq_len': 19266, 'encoder': {'hidden_dim': 768, 'depth': 12, 'heads': 12, 'dim_head': 64, 'seq_len': 19266, 'module_type': 'transformer', 'norm_first': False}, 'decoder': {'hidden_dim': 512, 'depth': 6, 'heads': 8, 'dim_head': 64, 'module_type': 'performer', 'seq_len': 19266, 'norm_first': False}, 'n_class': 104, 'pad_token_id': 103, 'mask_token_id': 102, 'bin_num': 100, 'bin_alpha': 1.0, 'rawcount': True, 'model': 'mae_autobin', 'test_valid_train_idx_dict': '/nfs_beijing/minsheng/data/os10000w-new/global_shuffle/meta.csv.train_set_idx_dict.pt', 'valid_data_path': '/nfs_beijing/minsheng/data/valid_count_10w.npz', 'num_tokens': 13, 'train_data_path': None, 'isPanA': False, 'isPlanA1': False, 'max_files_to_load': 5, 'bin_type': 'auto_bin', 'value_mask_prob': 0.3, 'zero_mask_prob': 0.03, 'replace_prob': 0.8, 'random_token_prob': 0.1, 'mask_ignore_token_ids': [0], 'decoder_add_zero': True, 'mae_encoder_max_seq_len': 15000, 'isPlanA': False, 'mask_prob': 0.3, 'model_type': 'mae_autobin', 'pos_embed': False, 'device': 'cuda'}
+{'mask_gene_name': False, 'gene_num': 19266, 'seq_len': 19266, 'encoder': {'hidden_dim': 768, 'depth': 12, 'heads': 12, 'dim_head': 64, 'seq_len': 19266, 'module_type': 'transformer', 'norm_first': False}, 'decoder': {'hidden_dim': 512, 'depth': 6, 'heads': 8, 'dim_head': 64, 'module_type': 'performer', 'seq_len': 19266, 'norm_first': False}, 'n_class': 104, 'pad_token_id': 103, 'mask_token_id': 102, 'bin_num': 100, 'bin_alpha': 1.0, 'rawcount': True, 'model': 'mae_autobin', 'test_valid_train_idx_dict': '/nfs_beijing/minsheng/data/os10000w-new/global_shuffle/meta.csv.train_set_idx_dict.pt', 'valid_data_path': '/nfs_beijing/minsheng/data/valid_count_10w.npz', 'num_tokens': 13, 'train_data_path': None, 'isPanA': False, 'isPlanA1': False, 'max_files_to_load': 5, 'bin_type': 'auto_bin', 'value_mask_prob': 0.3, 'zero_mask_prob': 0.03, 'replace_prob': 0.8, 'random_token_prob': 0.1, 'mask_ignore_token_ids': [0], 'decoder_add_zero': True, 'mae_encoder_max_seq_len': 15000, 'isPlanA': False, 'mask_prob': 0.3, 'model_type': 'mae_autobin', 'pos_embed': False, 'device': 'cuda'}
+Successfully loaded weights for scFoundation
+uni trainable params: 18.11M || all params: 321.46M || trainable%: 5.633831418677185
+scFoundation trainable params: 0.10M || all params: 100.04M || trainable%: 0.09839252098488002
+INFO     Instantiating callbacks and logger...                                                                                                        
+INFO     Instantiating trainer...                                                                                                                     
+Successfully loaded weights for scFoundation
+uni trainable params: 18.11M || all params: 321.46M || trainable%: 5.633831418677185
+scFoundation trainable params: 0.10M || all params: 100.04M || trainable%: 0.09839252098488002
+INFO     Instantiating callbacks and logger...                                                                                                        
+INFO     Training...                                                                                                                                  
+INFO     Instantiating trainer...                                                                                                                     
+INFO     Training...                                                                                                                                  
+Initializing distributed: GLOBAL_RANK: 3, MEMBER: 4/4
+Initializing distributed: GLOBAL_RANK: 2, MEMBER: 3/4
+Successfully loaded weights for scFoundation
+uni trainable params: 18.11M || all params: 321.46M || trainable%: 5.633831418677185
+scFoundation trainable params: 0.10M || all params: 100.04M || trainable%: 0.09839252098488002
+INFO     Instantiating callbacks and logger...                                                                                                        
+INFO     Instantiating trainer...                                                                                                                     
+Using bfloat16 Automatic Mixed Precision (AMP)
+GPU available: True (cuda), used: True
+TPU available: False, using: 0 TPU cores
+HPU available: False, using: 0 HPUs
+`Trainer(val_check_interval=1.0)` was configured so validation will run at the end of the training epoch..
+INFO     Training...                                                                                                                                  
+Initializing distributed: GLOBAL_RANK: 0, MEMBER: 1/4
+----------------------------------------------------------------------------------------------------
+distributed_backend=nccl
+All distributed processes registered. Starting with 4 processes
+----------------------------------------------------------------------------------------------------
+
+Successfully loaded weights for scFoundation
+uni trainable params: 18.11M || all params: 321.46M || trainable%: 5.633831418677185
+scFoundation trainable params: 0.10M || all params: 100.04M || trainable%: 0.09839252098488002
+INFO     Instantiating callbacks and logger...                                                                                                        
+INFO     Instantiating trainer...                                                                                                                     
+INFO     Training...                                                                                                                                  
+Initializing distributed: GLOBAL_RANK: 1, MEMBER: 2/4
+wandb: Currently logged in as: morrie3066924122 (morrie3066924122-ucl) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: Tracking run with wandb version 0.21.1
+wandb: Run data is saved locally in /lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/../results/human_lung_healthy_panel/local/wandb_logger/wandb/run-20250928_195247-87wdt35t
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run local
+wandb: ⭐️ View project at https://wandb.ai/morrie3066924122-ucl/hescape_training
+wandb: 🚀 View run at https://wandb.ai/morrie3066924122-ucl/hescape_training/runs/87wdt35t
+LOCAL_RANK: 3 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 1 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 0 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+LOCAL_RANK: 2 - CUDA_VISIBLE_DEVICES: [0,1,2,3]
+
+  | Name  | Type      | Params | Mode 
+--------------------------------------------
+0 | model | CLIPModel | 421 M  | train
+--------------------------------------------
+18.2 M    Trainable params
+403 M     Non-trainable params
+421 M     Total params
+1,686.006 Total estimated model params size (MB)
+1180      Modules in train mode
+0         Modules in eval mode
+Sanity Checking: |                                                                                                             | 0/? [00:00<?, ?it/s]Sanity Checking:   0%|                                                                                                         | 0/2 [00:00<?, ?it/s]Sanity Checking DataLoader 0:   0%|                                                                                            | 0/2 [00:00<?, ?it/s]Error executing job with overrides: []
+Error executing job with overrides: []
+Error executing job with overrides: []
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 133, in main
+    train(cfg)
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 73, in train
+    trainer.fit(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1054, in _run_stage
+    self._run_sanity_check()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1083, in _run_sanity_check
+    val_loop.run()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 145, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 437, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 328, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 411, in validation_step
+    return self._forward_redirection(self.model, self.lightning_module, "validation_step", *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+    wrapper_output = wrapper_module(*args, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1637, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1464, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+    out = method(*_args, **_kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 163, in validation_step
+    _, metrics = self.shared_step(batch, "val")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 179, in shared_step
+    contrastive_loss = self.model.compute_loss(  # recon_loss, cls_loss
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/models/clip.py", line 135, in compute_loss
+    contrastive_loss = self.loss(img_embed, gexp_embed, logit_scale=self.logit_scale.exp())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 141, in forward
+    logits_per_image, logits_per_text = self.get_logits(
+                                        ^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 120, in get_logits
+    logits_per_image = logit_scale * all_image_features @ all_text_features.T
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (172032x224 and 128x256)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Traceback (most recent call last):
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 133, in main
+    train(cfg)
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 73, in train
+    trainer.fit(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1054, in _run_stage
+    self._run_sanity_check()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1083, in _run_sanity_check
+    val_loop.run()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 145, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 437, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 328, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 411, in validation_step
+    return self._forward_redirection(self.model, self.lightning_module, "validation_step", *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+    wrapper_output = wrapper_module(*args, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1637, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1464, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+    out = method(*_args, **_kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 163, in validation_step
+    _, metrics = self.shared_step(batch, "val")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 179, in shared_step
+    contrastive_loss = self.model.compute_loss(  # recon_loss, cls_loss
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/models/clip.py", line 135, in compute_loss
+    contrastive_loss = self.loss(img_embed, gexp_embed, logit_scale=self.logit_scale.exp())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 141, in forward
+    logits_per_image, logits_per_text = self.get_logits(
+                                        ^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 120, in get_logits
+    logits_per_image = logit_scale * all_image_features @ all_text_features.T
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (172032x224 and 128x256)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Traceback (most recent call last):
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 133, in main
+    train(cfg)
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 73, in train
+    trainer.fit(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1054, in _run_stage
+    self._run_sanity_check()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1083, in _run_sanity_check
+    val_loop.run()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 145, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 437, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 328, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 411, in validation_step
+    return self._forward_redirection(self.model, self.lightning_module, "validation_step", *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+    wrapper_output = wrapper_module(*args, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1637, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1464, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+    out = method(*_args, **_kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 163, in validation_step
+    _, metrics = self.shared_step(batch, "val")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 179, in shared_step
+    contrastive_loss = self.model.compute_loss(  # recon_loss, cls_loss
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/models/clip.py", line 135, in compute_loss
+    contrastive_loss = self.loss(img_embed, gexp_embed, logit_scale=self.logit_scale.exp())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 141, in forward
+    logits_per_image, logits_per_text = self.get_logits(
+                                        ^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 120, in get_logits
+    logits_per_image = logit_scale * all_image_features @ all_text_features.T
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (172032x224 and 128x256)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+Traceback (most recent call last):
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 133, in main
+    train(cfg)
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/experiments/hescape_pretrain/train.py", line 73, in train
+    trainer.fit(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 561, in fit
+    call._call_and_handle_interrupt(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 47, in _call_and_handle_interrupt
+    return trainer.strategy.launcher.launch(trainer_fn, *args, trainer=trainer, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/launchers/subprocess_script.py", line 105, in launch
+    return function(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 599, in _fit_impl
+    self._run(model, ckpt_path=ckpt_path)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1012, in _run
+    results = self._run_stage()
+              ^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1054, in _run_stage
+    self._run_sanity_check()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/trainer.py", line 1083, in _run_sanity_check
+    val_loop.run()
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/utilities.py", line 179, in _decorator
+    return loop_run(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 145, in run
+    self._evaluation_step(batch, batch_idx, dataloader_idx, dataloader_iter)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/loops/evaluation_loop.py", line 437, in _evaluation_step
+    output = call._call_strategy_hook(trainer, hook_name, *step_args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/trainer/call.py", line 328, in _call_strategy_hook
+    output = fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 411, in validation_step
+    return self._forward_redirection(self.model, self.lightning_module, "validation_step", *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 641, in __call__
+    wrapper_output = wrapper_module(*args, **kwargs)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1637, in forward
+    else self._run_ddp_forward(*inputs, **kwargs)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 1464, in _run_ddp_forward
+    return self.module(*inputs, **kwargs)  # type: ignore[index]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/pytorch_lightning/strategies/strategy.py", line 634, in wrapped_forward
+    out = method(*_args, **_kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 163, in validation_step
+    _, metrics = self.shared_step(batch, "val")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/modules/pretrain_module.py", line 179, in shared_step
+    contrastive_loss = self.model.compute_loss(  # recon_loss, cls_loss
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lus/lfs1aip1/home/u5t/chuhansong.u5t/model/src/hescape/models/clip.py", line 135, in compute_loss
+    contrastive_loss = self.loss(img_embed, gexp_embed, logit_scale=self.logit_scale.exp())
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1751, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1762, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 141, in forward
+    logits_per_image, logits_per_text = self.get_logits(
+                                        ^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/open_clip/loss.py", line 120, in get_logits
+    logits_per_image = logit_scale * all_image_features @ all_text_features.T
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (172032x224 and 128x256)
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
+[1;34mwandb[0m: 
+[1;34mwandb[0m: 🚀 View run [33mlocal[0m at: [34mhttps://wandb.ai/morrie3066924122-ucl/hescape_training/runs/87wdt35t[0m
+[1;34mwandb[0m: Find logs at: [1;35m../../../../lus/lfs1aip1/home/u5t/chuhansong.u5t/results/human_lung_healthy_panel/local/wandb_logger/wandb/run-20250928_195247-87wdt35t/logs[0m
+                                                                                                                                                     W0928 19:53:00.437000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 253476 closing signal SIGTERM
+W0928 19:53:00.438000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 253477 closing signal SIGTERM
+W0928 19:53:00.439000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/api.py:900] Sending process 253478 closing signal SIGTERM
+E0928 19:53:00.866000 253411 /lus/lfs1aip1/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/api.py:874] failed (exitcode: 1) local_rank: 3 (pid: 253479) of binary: /home/u5t/chuhansong.u5t/miniconda3/envs/hescape/bin/python
+Traceback (most recent call last):
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/bin/torchrun", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/elastic/multiprocessing/errors/__init__.py", line 355, in wrapper
+    return f(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py", line 892, in main
+    run(args)
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/run.py", line 883, in run
+    elastic_launch(
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 139, in __call__
+    return launch_agent(self._config, self._entrypoint, list(args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/u5t/chuhansong.u5t/miniconda3/envs/hescape/lib/python3.11/site-packages/torch/distributed/launcher/api.py", line 270, in launch_agent
+    raise ChildFailedError(
+torch.distributed.elastic.multiprocessing.errors.ChildFailedError: 
+============================================================
+experiments/hescape_pretrain/train.py FAILED
+------------------------------------------------------------
+Failures:
+  <NO_OTHER_FAILURES>
+------------------------------------------------------------
+Root Cause (first observed failure):
+[0]:
+  time      : 2025-09-28_19:53:00
+  host      : nid001001
+  rank      : 3 (local_rank: 3)
+  exitcode  : 1 (pid: 253479)
+  error_file: <N/A>
+  traceback : To enable traceback see: https://pytorch.org/docs/stable/elastic/errors.html
+============================================================

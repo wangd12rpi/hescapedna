@@ -1,0 +1,14 @@
+defaults:
+  - anatomy: breast
+
+dataset_path: Peng-AI/hescape-pyarrow
+data_files_path: ${project_root:}/data
+# base_path: /mnt/raw/datasets/hf_datasets
+# base_splits_path: /mnt/projects/hai_spatial_clip/hescape/data
+
+base_output_path: ${project_root:}/../results
+
+pretrain_weights:
+  img_enc_path: ${project_root:}/../pretrain_weights/image
+  gene_enc_path: ${project_root:}/../pretrain_weights/gene
+  # base_data_gene_reference_path: /mnt/projects/hai_spatial_clip/hescape/data
