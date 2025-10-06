@@ -440,7 +440,7 @@ class ImageGexpDataModule(LightningDataModule):
 
         elif gene_model_name in ["scFoundation"]:
             self.gene_transform = TRANSFORMS["scFoundation"](
-                scFoundation_gene_index_path="/lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene/scFoundation/OS_scRNA_gene_index.19264.tsv",
+                scFoundation_gene_index_path="/home/exouser/Public/pretrained_weights/gene/scFoundation/OS_scRNA_gene_index.19264.tsv",
                 data_gene_reference_path=self.data_gene_reference_path,
             )
 

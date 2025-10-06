@@ -13,4 +13,4 @@ from huggingface_hub import login
 dataset = load_dataset("Peng-AI/hescape-pyarrow", name="human-lung-healthy-panel", split="train")
 
 
-dataset.save_to_disk("C:/Users/ioone/PycharmProjects/moemodified/hescape/datasets/human_breast_panel")
+dataset.save_to_disk("human_breast_panel")

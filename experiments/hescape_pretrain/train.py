@@ -60,6 +60,9 @@ def train(cfg: DictConfig) -> None:
     lr_lambda = hydra.utils.instantiate(cfg.model.cosine_scheduler)
     model: LightningModule = hydra.utils.instantiate(cfg.model.litmodule)
     model = model(lambda_scheduler=lr_lambda, cfg=cfg)
+    print(f"Model layers: {len(list(model.named_modules()))}")
+    print(f"Transformer blocks: {len(model.blocks) if hasattr(model, 'blocks') else 'N/A'}")
+    #print(f"r value: {peft_config.r}, type: {type(peft_config.r)}, len: {len(peft_config.r) if isinstance(peft_config.r, list) else 'N/A'}")
 
     hescape_logger.info("Instantiating callbacks and logger...")
     callbacks: list[Callback] = []
@@ -72,12 +75,14 @@ def train(cfg: DictConfig) -> None:
         lgr = hydra.utils.instantiate(lg)
 
         logger.append(lgr)
-
+        
     hescape_logger.info("Instantiating trainer...")
     trainer: Trainer = hydra.utils.instantiate(cfg.training.lightning.trainer)
     trainer = trainer(callbacks=callbacks, logger=logger)
+    
     if cfg.training.train:
         hescape_logger.info("Training...")
+        
         trainer.fit(
             model,
             # datamodule=dm,

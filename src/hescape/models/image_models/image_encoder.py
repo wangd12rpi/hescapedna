@@ -12,7 +12,7 @@ from peft import LoraConfig, get_peft_model
 from timm.layers import Mlp
 
 from hescape.models._utils import print_trainable_parameters
-from hescape.models.image_models._conch import _build_conch_model
+#from hescape.models.image_models._conch import _build_conch_model
 from hescape.models.image_models._ctranspath import _build_ctranspath_model
 from hescape.models.image_models._h0_mini import _build_h0_mini_model
 from hescape.models.image_models._utils import freeze_batch_norm_2d
@@ -233,87 +233,6 @@ class ImageEncoder(nn.Module):
                 noisy_gating=True,
                 acc_aux_loss=False,
             )
-            state_dict_path = "/lus/lfs1aip1/home/u5t/chuhansong.u5t/results/human_lung_healthy_panel/local/checkpoints/last.ckpt"
-            
-            # Hydra/OmegaConf fix: 添加 safe globals 以避免 UnpicklingError
-            import torch
-            from omegaconf import DictConfig
-            torch.serialization.add_safe_globals([DictConfig])
-            
-            full_ckpt = torch.load(state_dict_path, map_location="cpu", weights_only=False)
-            
-            # 提取 model state_dict（PyTorch Lightning/Hydra ckpt 通常是 {'state_dict': state_dict, 'epoch': ..., ...}）
-            if isinstance(full_ckpt, dict) and 'state_dict' in full_ckpt:
-                full_state_dict = full_ckpt['state_dict']
-                print(f"[DEBUG] Extracted 'state_dict' from Lightning ckpt, keys: {len(full_state_dict)}")
-            elif isinstance(full_ckpt, dict) and 'model' in full_ckpt:
-                full_state_dict = full_ckpt['model']
-                print(f"[DEBUG] Extracted 'model' from Hydra ckpt, keys: {len(full_state_dict)}")
-            else:
-                full_state_dict = full_ckpt
-                print(f"[DEBUG] Direct ckpt load, keys: {len(full_state_dict)}")
-            
-            # 打印 ckpt keys 样本以调试前缀
-            print(f"[DEBUG] Sample ckpt keys: {list(full_state_dict.keys())[:5]}")
-            
-            # 过滤 MoE 相关的 key（捕获所有 head.moe. 子树，包括 moe. 和 proj.）
-            moe_prefix = "model.image_encoder.head.moe."
-            moe_subdict = {}
-            for k, v in full_state_dict.items():
-                if k.startswith(moe_prefix):
-                    # 切片去掉前缀（不replace，避免proj错位）
-                    new_key = k[len(moe_prefix):]  # e.g., "moe.moe.experts.weight" -> "moe.experts.weight"; "moe.proj.weight" -> "proj.weight"
-                    moe_subdict[new_key] = v
-            
-            # 如果空，试备用前缀（无 model.）
-            if not moe_subdict:
-                alt_prefix = "image_encoder.head.moe."
-                for k, v in full_state_dict.items():
-                    if k.startswith(alt_prefix):
-                        new_key = k[len(alt_prefix):]
-                        moe_subdict[new_key] = v
-                print(f"[DEBUG] Tried alt prefix '{alt_prefix}', now {len(moe_subdict)} keys")
-            
-            print(f"[DEBUG] Full MoE subdict keys: {list(moe_subdict.keys())}")  # 打印完整key，确认5个
-            print(f"[DEBUG] Filtered MoE subdict: {len(moe_subdict)} keys")
-            
-            # 加载到 MoE 模块前，打印模型期望的keys
-            moe_module = head_layers["moe"]
-            expected_keys = list(moe_module.state_dict().keys())
-            print(f"[DEBUG] Expected MoE keys: {len(expected_keys)}, sample: {expected_keys[:5]}")
-            
-            pre_load_sample = moe_module.proj.weight.data[0, 0].item()  # 加载前随机值
-            
-            # 尝试加载，捕获shape mismatch错误
-            try:
-                missing, unexpected = moe_module.load_state_dict(moe_subdict, strict=False)
-            except RuntimeError as e:
-                print(f"[ERROR] Load error (shape mismatch?): {e}")
-                missing, unexpected = set(), list(moe_subdict.keys())  # Treat as unexpected
-            
-            post_load_sample = moe_module.proj.weight.data[0, 0].item()  # 加载后值
-            print(f"[DEBUG] MoE load sample: pre={pre_load_sample:.4f} -> post={post_load_sample:.4f} (changed? {pre_load_sample != post_load_sample})")
-            
-            # 调试信息
-            if missing:
-                print(f"[WARN] Missing keys: {len(missing)}, sample: {list(missing)[:3]}")
-            if unexpected:
-                print(f"[WARN] Unexpected keys: {len(unexpected)}, sample: {list(unexpected)[:3]}")
-            
-            # 如果missing和subdict重叠，可能是key不匹配——打印diff
-            missing_list = list(missing)
-            subdict_list = list(moe_subdict.keys())
-            common = set(missing_list) & set(subdict_list)
-            if common:
-                print(f"[WARN] Overlap between missing and subdict: {len(common)}, sample: {list(common)[:3]} — key exact match issue?")
-            
-            # TBD
-            self.head_layers = head_layers  # Store dict
-            self.proj_layer = self.head_layers.get(proj, None)
-            if self.proj_layer is None:
-                raise ValueError(f"No head_layer for proj={proj}")
-        else:
-            raise ValueError(f"Unknown projection type: {proj}")
         
         return nn.Sequential(head_layers)
 

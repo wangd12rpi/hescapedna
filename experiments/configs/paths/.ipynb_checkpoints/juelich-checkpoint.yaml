@@ -1,7 +1,7 @@
 defaults:
   - anatomy: lung_healthy
 
-dataset_path : /lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/human_lung_panel
+dataset_path : /home/exouser/Public/modified/human_lung_panel
 data_files_path: ${project_root:}/data
 
 # base_splits_path: /p/project1/hai_spatial_clip/hescape/data
@@ -10,6 +10,6 @@ base_output_path: ${project_root:}/../results
 
 
 pretrain_weights:
-  img_enc_path: /lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/image
-  gene_enc_path: /lus/lfs1aip1/home/u5t/chuhansong.u5t/pretrain_weights/gene
+  img_enc_path: /home/exouser/Public/pretrained_weights/image
+  gene_enc_path: /home/exouser/Public/pretrained_weights/gene
   base_data_gene_reference_path: /p/project1/hai_spatial_clip/hescape/data

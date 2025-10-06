@@ -30,7 +30,7 @@ datamodule:
   num_workers: 4
   pin_memory: true
   persistent_workers: true
-  data_gene_reference_path: "/lus/lfs1aip1/home/u5t/chuhansong.u5t/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad"
+  data_gene_reference_path: "/home/exouser/UCFhescape/data/human-lung-healthy-panel/nicheformer_reference.h5ad"
 
   
 training:
