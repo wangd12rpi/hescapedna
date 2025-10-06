@@ -4,18 +4,17 @@ lightning:
     _partial_: true
     max_steps: 40_000
     enable_progress_bar: true
-    devices: 1 # ${hydra:launcher.tasks_per_node} # it oly works for submitit
-    num_nodes: 1 # ${hydra:launcher.nodes}
-    strategy: "ddp"
-    precision: "bf16-mixed" #16
-    log_every_n_steps: 10 # TBD
-    # check_val_every_n_epoch: 3
+    devices: 1  # Keep this for single GPU
+    num_nodes: 1
+    strategy: "auto"  # Change to 'auto' (or remove this line entirely—it defaults to single-device)
+    precision: "bf16-mixed"
+    log_every_n_steps: 10
     val_check_interval: 1.0
-    sync_batchnorm: True
+    sync_batchnorm: True  # This is fine for single GPU, but optional
     accelerator: "gpu"
-    gradient_clip_val: 5 # TBD
-    num_sanity_val_steps: 2 # TBD
-    profiler:
+    gradient_clip_val: 5
+    num_sanity_val_steps: 2
+    profiler: null  # Or whatever you intended; if incomplete, set to false/null to disable
 
 train: true
 test: false
