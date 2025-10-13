@@ -1,0 +1,11 @@
+_target_: hescape.data_modules.dnameth_wsi_dataset.DNAMethWSIDataModule
+root_dir: ${paths.data_root_dir} # e.g., data/new-wsi-dnameth
+train_jsonl: train/index_tile.jsonl
+val_jsonl: null
+test_jsonl: test/index_tile.jsonl
+batch_size: 8
+num_workers: 4
+pin_memory: true
+persistent_workers: true
+val_split: 0.1
+seed: ${datamodule.seed}

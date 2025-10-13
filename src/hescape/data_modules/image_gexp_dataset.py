@@ -561,7 +561,7 @@ if __name__ == "__main__":
 
     data_files_path = "/mnt/projects/hai_spatial_clip/hescape/data/"
     # data_gene_reference_path = data_files_path / dataset_name / "nicheformer_reference.h5ad"
-    
+
     # split_path = data_files_path / dataset_name
     # split_train_csv = str(split_path / "train.csv")
     # split_val_csv = str(split_path / "val.csv")

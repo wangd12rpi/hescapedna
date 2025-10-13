@@ -5,9 +5,9 @@ defaults:
   - model: default
   - training: default
   - paths: juelich
-  - datamodule: lung_healthy
+  - datamodule: dnameth_wsi
   - _self_
-  - override paths/anatomy: lung_healthy
+  - override paths/anatomy: skin
 
 ############ Job specific configurations ############
 
@@ -15,24 +15,24 @@ name: hescape_default_training
 
 model:
   litmodule:
-    img_enc_name: uni
+    img_enc_name: gigapath
     img_finetune: true
-    img_proj: moe
-    gene_enc_name: scFoundation
-    gene_finetune: false
-    gene_proj: linear # mlp
+    img_proj: linear
+    gene_enc_name: cpgpt
+    gene_finetune: true
+    gene_proj: linear
     loss: CLIP
     temperature: 0.07
 
 datamodule:
   seed: 24442
-  batch_size: 64
-  num_workers: 16
-  pin_memory: false
-  persistent_workers: false
-  data_gene_reference_path: "/home/exouser/Public/modified/data/human-lung-healthy-panel/nicheformer_reference.h5ad"
+  batch_size: 8
+  num_workers: 4
+  pin_memory: true
+  persistent_workers: true
+  # for DNAMeth datamodule we use paths.data_root_dir below
 
-  
+
 training:
   lightning:
     trainer:

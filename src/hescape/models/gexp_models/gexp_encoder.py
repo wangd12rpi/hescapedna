@@ -25,6 +25,7 @@ from hescape.models.gexp_models._nicheformer import _build_nicheformer_model
 from hescape.models.gexp_models._scfoundation import _build_scfoundation_model
 from hescape.models.gexp_models._utils import freeze_batch_norm_2d
 from hescape.models.gexp_models.moe import MoE
+from hescape.models.dnameth_models import _build_cpgpt_model
 
 
 # takes all gexp encoders in a single class
@@ -142,6 +143,12 @@ class GexpEncoder(nn.Module):
 
         elif model_name == "generic":
             trunk = GenericEncoder(num_input=self.input_genes, num_layer=3, embed_dim=self.embed_dim)
+            num_features = self.embed_dim
+
+        elif model_name == "cpgpt":
+            # Use CpGPT backbone for DNA methylation
+            trunk = _build_cpgpt_model(checkpoint_root, in_features=self.input_genes, out_features=self.embed_dim)
+            # CpGPTBackbone reports num_features via out_features
             num_features = self.embed_dim
 
         else:

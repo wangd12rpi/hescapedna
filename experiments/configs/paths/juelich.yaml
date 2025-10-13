@@ -13,3 +13,5 @@ pretrain_weights:
   img_enc_path: /home/exouser/Public/pretrained_weights/image
   gene_enc_path: /home/exouser/Public/pretrained_weights/gene
   base_data_gene_reference_path: /p/project1/hai_spatial_clip/hescape/data
+
+data_root_dir: ${project_root:}/data/new-wsi-dnameth
