@@ -44,12 +44,20 @@ def train(cfg: DictConfig) -> None:
     dm: LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
     dm.prepare_data()
     dm.setup()
+
+    # For DNA methylation: dynamically get input_genes after setup
+    if hasattr(dm, 'input_genes'):
+        input_genes = dm.input_genes
+        hescape_logger.info(f"DNA methylation: Using {input_genes} CpG sites")
+        # Update config with actual input_genes
+        cfg.model.litmodule.input_genes = input_genes
+
     train_loader = dm.train_dataloader()
     valid_loader = dm.val_dataloader()
     test_loader = dm.test_dataloader()
     print(f"[DEBUG] test dataset size = {len(test_loader.dataset)}")
     print(f"[DEBUG] test loader batches = {len(test_loader)}")
-    
+
     # 取一个 batch 看一下
     for batch_idx, batch in enumerate(test_loader):
         print(f"[DEBUG] batch {batch_idx} loaded, keys = {batch.keys() if isinstance(batch, dict) else type(batch)}")

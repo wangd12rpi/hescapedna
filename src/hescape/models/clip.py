@@ -71,6 +71,8 @@ class CLIPModel(nn.Module):
             finetune=img_finetune,
             checkpoint_path=kwargs.get("img_enc_path", None),
             proj=kwargs.get("img_proj", "linear"),
+            use_slide_encoder=kwargs.get("use_slide_encoder", True),  # For GigaPath slide-level
+            global_pool=kwargs.get("global_pool", False),
         )
 
         self.gene_enc_name = gene_enc_name

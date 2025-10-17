@@ -404,3 +404,10 @@ class DnaMethWSIDataModule(LightningDataModule):
         # simple choice: return val loader here, adapt as needed
         assert self.val_ds is not None
         return self._dl(self.val_ds, shuffle=False, pin=False, persist=False)
+
+    @property
+    def input_genes(self) -> int:
+        """Return number of CpG sites for model initialization."""
+        if self.train_ds is not None:
+            return self.train_ds.n_sites
+        return 0  # Will be set after setup

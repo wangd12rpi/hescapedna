@@ -7,7 +7,6 @@ defaults:
   - paths: juelich
   - datamodule: dnameth_wsi
   - _self_
-  - override paths/anatomy: skin
 
 ############ Job specific configurations ############
 

@@ -1,7 +1,7 @@
 litmodule:
   _target_: hescape.modules.pretrain_module.PretrainModule
   _partial_: true
-  input_genes: ${datamodule.input_genes} # changes depending on the gene-panel used
+  input_genes: 0  # Will be set dynamically after datamodule setup for DNA meth
   embed_dim: 128
   img_enc_name: uni # options: "ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"
   gene_enc_name: scfoundation # "drvi", "nicheformer", "scfoundation", "uce", "generic"
