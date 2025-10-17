@@ -79,6 +79,11 @@ class PretrainModule(LightningModule):
         else:
             logger.info("CUDA is not available.")
 
+        # Determine gene_enc_path: use cpgpt path if cpgpt is the model
+        gene_enc_path = self.cfg.paths.pretrain_weights.gene_enc_path
+        if gene_enc_name == "cpgpt" and hasattr(self.cfg.paths.pretrain_weights, "cpgpt_checkpoint_path"):
+            gene_enc_path = self.cfg.paths.pretrain_weights.cpgpt_checkpoint_path
+
         self.model = CLIPModel(
             input_genes=input_genes,
             embed_dim=embed_dim,
@@ -94,8 +99,8 @@ class PretrainModule(LightningModule):
             world_size=world_size,
             rank=local_rank,
             img_enc_path=self.cfg.paths.pretrain_weights.img_enc_path,
-            gene_enc_path=self.cfg.paths.pretrain_weights.gene_enc_path,
-            drvi_model_dir=self.cfg.paths.anatomy.pretrain_weights.drvi_model_dir,
+            gene_enc_path=gene_enc_path,
+            drvi_model_dir=self.cfg.paths.anatomy.pretrain_weights.drvi_model_dir if hasattr(self.cfg.paths, "anatomy") else None,
             cfg=cfg,
             img_proj=img_proj,
             gene_proj=gene_proj,

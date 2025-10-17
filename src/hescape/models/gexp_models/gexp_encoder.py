@@ -147,9 +147,18 @@ class GexpEncoder(nn.Module):
 
         elif model_name == "cpgpt":
             # Use CpGPT backbone for DNA methylation
-            trunk = _build_cpgpt_model(checkpoint_root, in_features=self.input_genes, out_features=self.embed_dim)
-            # CpGPTBackbone reports num_features via out_features
+            # Pass through kwargs for learned_site_emb, seq_dim, freeze_cpgpt
+            trunk = _build_cpgpt_model(
+                checkpoint_root=checkpoint_root,
+                in_features=self.input_genes,
+                out_features=self.embed_dim,
+                learned_site_emb=kwargs.get("learned_site_emb", True),
+                seq_dim=kwargs.get("seq_dim", 256),
+                freeze_cpgpt=kwargs.get("freeze_cpgpt", True),
+            )
+            # CpGPTBackbone outputs embed_dim features
             num_features = self.embed_dim
+            print(f"Successfully loaded CpGPT for DNA methylation with {self.input_genes} CpG sites")
 
         else:
             raise ValueError(f"Unknown model name: {model_name}")

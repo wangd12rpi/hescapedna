@@ -49,7 +49,7 @@ class CpGPTBackbone(nn.Module):
         ckpt_path = Path(ckpt_path)
         try:
             # CpGPT is a Lightning module with .net inside
-            from cpgpt.models.module import CpGPTLitModule  # type: ignore
+            from cpgpt.model.cpgpt_module import CpGPTLitModule  # type: ignore
         except Exception as e:
             raise ImportError(
                 "CpGPT not found. Install CpGPT and ensure it is on PYTHONPATH. "
