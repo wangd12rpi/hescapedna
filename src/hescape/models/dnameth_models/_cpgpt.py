@@ -1,202 +1,340 @@
-# hescape/models/dnameth_models/_cpgpt.py
 from __future__ import annotations
 
+import json
+import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-
-def _find_ckpt_file(root: Path, candidates: tuple[str, ...] = ("cpgpt.ckpt", "last.ckpt", "model.ckpt")) -> Optional[Path]:
-    if root.is_file():
-        return root
-    for c in candidates:
-        p = root / c
-        if p.exists():
-            return p
-    # fallback: first .ckpt under root
-    ckpts = list(root.glob("*.ckpt"))
-    return ckpts[0] if ckpts else None
+# ---- CpGPT imports (repo must be importable) ----
+# Minimal, battle-tested imports based on the repo layout you shared earlier.
+# If your clone uses slightly different module names, update the import lines below.
+from cpgpt.data.components.dna_llm_embedder import DNALLMEmbedder  # builds DNA-LLM memmap index
+from cpgpt.model.lit_module import CpGPTLitModule  # Lightning wrapper (we'll use its .net)
+from cpgpt.model.build import build_net_from_config  # factory to create CpGPT net from YAML
+from cpgpt.utils.io import load_yaml  # lightweight YAML loader
 
 
 class CpGPTBackbone(nn.Module):
     """
-    Minimal backbone that uses CpGPT to turn a beta vector [B, N] into a sample embedding [B, D].
+    CpGPT backbone that turns a methylation beta vector into a CpGPT sample embedding.
 
-    Two modes:
-      - learned_site_emb=True: create a learnable site embedding table [N, seq_dim] to fill
-        CpGPT's `sequence_embeddings`. This works without genomic coordinates.
-      - learned_site_emb=False: expect caller to pass real `sequence_embeddings` via forward(..., seq_emb=...).
-
-    Notes:
-      - CpGPT expects fields: meth, sequence_embeddings, chroms, positions, mask_na.
-        We provide zeros for chroms/positions when using learned site embeddings.
-      - The returned embedding dimension is inferred at runtime on the first forward.
+    Expected input to forward:
+      - x:  Float tensor [B, N_vocab] with beta values aligned to CpGPT vocab order.
+            NaNs are allowed for missing sites.
+    Returns:
+      - embedding: Float tensor [B, embed_dim] (e.g., 128 for the 'cancer' model)
     """
 
     def __init__(
         self,
-        ckpt_path: Path | str,
-        num_sites: int,
-        out_dim: int = 128,
-        learned_site_emb: bool = True,
-        seq_dim: int = 256,
-        freeze_cpgpt: bool = True,
-    ):
+        dependencies_root: str,
+        model_name: str = "cancer",
+        species_dir: str = "human",                # folder name under dependencies/
+        species_key: str = "homo_sapiens",         # key used by DNALLMEmbedder
+        dna_llm: str = "nucleotide-transformer-v2-500m-multi-species",
+        dna_context_len: int = 2001,
+        finetune_lora: bool | Dict[str, Any] = False,
+        device: str | torch.device = "cuda" if torch.cuda.is_available() else "cpu",
+    ) -> None:
+        """
+        Args:
+          dependencies_root: root folder that contains 'dependencies/' from your tree.
+            Example: '/media/volume/patho_meth/PathoMethyl-FM/cpgpt_files'
+          model_name: subfolder under dependencies/model/{config|weights|vocab}
+          species_dir: folder under dependencies/ with species-specific DBs and memmaps
+          species_key: key used inside CpGPT's metadata dict, typically 'homo_sapiens'
+          dna_llm: DNA LLM id matching your memmap path
+          dna_context_len: context length (must match memmap filename)
+          finetune_lora: False or a dict with LoRA settings {'r': 8, 'alpha': 16, 'dropout': 0.0}
+        """
         super().__init__()
-        ckpt_path = Path(ckpt_path)
-        try:
-            # CpGPT is a Lightning module with .net inside
-            from cpgpt.models.module import CpGPTLitModule  # type: ignore
-        except Exception as e:
-            raise ImportError(
-                "CpGPT not found. Install CpGPT and ensure it is on PYTHONPATH. "
-                "Repo: https://github.com/lcamillo/CpGPT"
-            ) from e
 
-        # load lightning checkpoint
-        if ckpt_path.is_dir():
-            resolved = _find_ckpt_file(ckpt_path)
-            if resolved is None:
-                raise FileNotFoundError(f"No CpGPT .ckpt found in {ckpt_path}")
-            ckpt_path = resolved
-
-        self.lit: Any = CpGPTLitModule.load_from_checkpoint(checkpoint_path=str(ckpt_path), strict=False, map_location="cpu")
-        self.net: nn.Module = self.lit.net  # the actual PyTorch net with encode_sample(...)
-        self.num_sites = int(num_sites)
-
-        # site embeddings to fake CpGPT's dna sequence embeddings if needed
-        self.learned_site_emb = learned_site_emb
-        if learned_site_emb:
-            self.site_table = nn.Embedding(num_embeddings=self.num_sites, embedding_dim=seq_dim)
-            nn.init.normal_(self.site_table.weight, mean=0.0, std=0.02)
-            self.seq_dim = seq_dim
-        else:
-            self.site_table = None
-            self.seq_dim = None  # must be provided at forward time via seq_emb
-
-        # linear projection to the requested out_dim, will be set after probing once
-        self._sample_dim: Optional[int] = None
-        self.proj = None  # will initialize on first call
-
-        if freeze_cpgpt:
-            for p in self.net.parameters():
-                p.requires_grad = False
-            self.net.eval()  # eval switches off dropout but does NOT block grads if you unfreeze later
-
-    @property
-    def sample_dim(self) -> int:
-        if self._sample_dim is None:
-            raise RuntimeError("Call forward once to infer sample embedding dimension, or set it manually.")
-        return self._sample_dim
-
-    def _ensure_proj(self, sample_dim: int, out_dim: int):
-        if self.proj is None:
-            self.proj = nn.Linear(sample_dim, out_dim)
-        else:
-            # if already created for a different dim, reinit
-            if self.proj.in_features != sample_dim or self.proj.out_features != out_dim:
-                self.proj = nn.Linear(sample_dim, out_dim)
-
-    def forward(
-        self,
-        x: torch.Tensor,                  # [B, N] beta values with possible NaNs
-        seq_emb: torch.Tensor | None = None,   # [B, N, E] real DNA embeddings if available
-        chroms: torch.Tensor | None = None,    # ignored when learned_site_emb=True
-        positions: torch.Tensor | None = None, # ignored when learned_site_emb=True
-        out_dim: int | None = None,
-        train_mode: bool | None = None,
-    ) -> torch.Tensor:
-        """
-        Returns [B, out_dim] embedding.
-        """
-        B, N = x.shape
-        device = x.device
-        # choose CpGPT train/eval only if caller explicitly asks
-        if train_mode is not None:
-            self.net.train(mode=train_mode)
-
-        # build mask for NaNs and zero-fill
-        mask_na = torch.isnan(x)
-        meth = torch.nan_to_num(x, nan=0.0)
-
-        # build sequence embeddings
-        if self.learned_site_emb:
-            # learned table by site index [0..N-1], broadcast to batch
-            idx = torch.arange(N, device=device, dtype=torch.long)
-            base = self.site_table(idx)                  # [N, E]
-            seq_embeddings = base.unsqueeze(0).expand(B, N, -1)  # [B, N, E]
-            chroms = torch.zeros(B, N, dtype=torch.int32, device=device)
-            positions = torch.zeros(B, N, dtype=torch.int32, device=device)
-        else:
-            if seq_emb is None:
-                raise ValueError("seq_emb must be provided when learned_site_emb is False.")
-            seq_embeddings = seq_emb  # [B, N, E]
-            if chroms is None or positions is None:
-                # create placeholders if not provided
-                chroms = torch.zeros(B, N, dtype=torch.int32, device=device)
-                positions = torch.zeros(B, N, dtype=torch.int32, device=device)
-
-        # CpGPT expects boolean mask of same shape
-        input_data = {
-            "meth": meth,                                   # float [B,N]
-            "sequence_embeddings": seq_embeddings,          # float [B,N,E]
-            "chroms": chroms,                               # int   [B,N]
-            "positions": positions,                         # int   [B,N]
-            "mask_na": mask_na,                             # bool  [B,N]
+        # ---- paths and sanity ----
+        dep_root = Path(dependencies_root).resolve()
+        self.paths = {
+            "dep": dep_root / "dependencies",
+            "model_cfg": dep_root / "dependencies" / "model" / "config" / f"{model_name}.yaml",
+            "model_ckpt": dep_root / "dependencies" / "model" / "weights" / f"{model_name}.ckpt",
+            "model_vocab": dep_root / "dependencies" / "model" / "vocab" / f"{model_name}.json",
+            "dna_mmap": dep_root
+            / "dependencies"
+            / species_dir
+            / "dna_embeddings"
+            / species_key
+            / dna_llm
+            / f"{dna_context_len}bp_dna_embeddings.mmap",
         }
+        for k, p in self.paths.items():
+            if k in {"dep"}:
+                continue
+            if not p.exists():
+                raise FileNotFoundError(f"[CpGPTBackbone] Missing required file for '{k}': {p}")
 
-        # sample embedding
-        sample_embed: torch.Tensor = self.net.encode_sample(**input_data)  # [B, D*] unknown yet
-        Dstar = sample_embed.shape[-1]
+        # ---- load vocab (order of CpG probes the model expects) ----
+        self.vocab_sites = self._load_vocab(self.paths["model_vocab"])
+        self.n_vocab = len(self.vocab_sites)
 
-        # lazily build projection if needed
-        target_dim = out_dim if out_dim is not None else Dstar
-        self._ensure_proj(Dstar, target_dim)
-        self._sample_dim = Dstar
+        # ---- embedder for DNA sequence features and metadata dictionaries ----
+        self.embedder = DNALLMEmbedder(dependencies_dir=str(self.paths["dep"]))
+        self.species_key = species_key
+        self.dna_llm = dna_llm
+        self.dna_context_len = dna_context_len
 
-        # normalize then project to requested dimension
-        sample_embed = F.layer_norm(sample_embed, normalized_shape=(Dstar,))
-        out = self.proj(sample_embed) if self.proj is not None else sample_embed
+        # Build mapping from 'chrom:pos' -> index within the memmap
+        self._embedding_index_dict = self.embedder.ensembl_metadata_dict[self.species_key][self.dna_llm][
+            self.dna_context_len
+        ]
+        self._reverse_vocab = self.embedder.ensembl_metadata_dict[self.species_key]["reverse_vocab"]
+        self._llm_embed_dim = self.embedder.llm_embedding_size_dict[self.dna_llm]
+
+        # Memory-map the DNA-LLM embeddings once
+        self._dna_mmap = np.memmap(
+            self.paths["dna_mmap"],
+            dtype="float32",
+            mode="r",
+            shape=(len(self._embedding_index_dict), self._llm_embed_dim),
+        )
+
+        # ---- build CpGPT net and load weights ----
+        cfg = load_yaml(str(self.paths["model_cfg"]))
+        self.net = build_net_from_config(cfg)  # returns the CpGPT 'net' module
+        # Lightning wrapper is used simply as a loader to align state_dict keys
+        lit = CpGPTLitModule(training=cfg.get("training", {}), net=self.net, optimizer=torch.optim.Adam(self.net.parameters()))
+        ckpt = torch.load(self.paths["model_ckpt"], map_location="cpu")
+        lit.load_state_dict(ckpt["state_dict"], strict=False)  # loads into lit.net as needed
+        self.net = lit.net  # grab the net back
+        self.net.eval()  # default inference mode
+        self.to(device)
+        self.device = torch.device(device)
+
+        # Optional LoRA
+        self._lora_on = False
+        if finetune_lora:
+            self._apply_lora(self.net, finetune_lora if isinstance(finetune_lora, dict) else {})
+
+        # Expose output embedding size for upstream code (e.g., your head choice)
+        # CpGPT typically uses 128-dim sample embeddings for cancer weights
+        # If the config differs, infer from a dummy linear probe on net.sample_embed_dim if available.
+        self.embed_dim = getattr(self.net, "sample_embed_dim", 128)
+
+    # ---------- public API ----------
+
+    @torch.no_grad()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+          x: [B, N_vocab] beta matrix aligned to vocab/cancer.json order. NaNs allowed.
+
+        Returns:
+          sample embeddings [B, embed_dim]
+        """
+        if x.dim() != 2:
+            raise ValueError(f"Expected 2D tensor [B, N_vocab], got shape {tuple(x.shape)}")
+        if x.shape[1] != self.n_vocab:
+            raise ValueError(
+                f"Input has {x.shape[1]} features, but CpGPT vocab expects {self.n_vocab}. "
+                f"Make sure your datamodule filtered & ordered CpGs by vocab json."
+            )
+
+        x = x.to(self.device, dtype=torch.float32)
+        mask_na = torch.isnan(x)  # [B, N]
+        x = torch.nan_to_num(x, nan=0.0)
+
+        # Static per-site genomic metadata prepared once
+        chroms_idx, positions = self._get_chrom_pos_for_vocab()  # [N], [N] on CPU
+        chroms = chroms_idx.unsqueeze(0).expand(x.size(0), -1).to(self.device)      # [B, N]
+        positions = positions.unsqueeze(0).expand(x.size(0), -1).to(self.device)    # [B, N]
+
+        # Build sequence embeddings for all vocab CpGs via memmap lookup
+        seq_emb = self._get_dna_embeddings_for_vocab(batch_size=x.size(0))  # [B, N, E]
+
+        # Call CpGPT's sample encoder
+        # CpGPT's net expects keys: meth, sequence_embeddings, chroms, positions, mask_na
+        out = self.net.encode_sample(
+            meth=x,  # [B, N] (beta values)
+            sequence_embeddings=seq_emb,  # [B, N, E]
+            chroms=chroms,               # [B, N] (int32)
+            positions=positions,         # [B, N] (int32)
+            mask_na=mask_na,             # [B, N] (bool)
+        )
+        # 'out' is the sample embedding [B, D]
         return out
+
+    # ---------- builders & helpers ----------
+
+    @staticmethod
+    def _load_vocab(vocab_json: Path) -> List[str]:
+        with open(vocab_json, "r") as f:
+            data = json.load(f)
+        # Accept several common shapes: a flat list or {'sites': [...]} or {'var_names': [...]}
+        if isinstance(data, list):
+            return [str(s) for s in data]
+        for key in ("sites", "cpg_ids", "features", "var_names"):
+            if key in data and isinstance(data[key], (list, tuple)):
+                return [str(s) for s in data[key]]
+        raise ValueError(f"Unrecognized vocab JSON format: {vocab_json}")
+
+    def _get_chrom_pos_for_vocab(self) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Resolves chromosome indices and 1-based genomic positions for each CpG in the vocab.
+        Uses CpGPT's metadata DB via DNALLMEmbedder, which ships with probe->coord mappings.
+
+        Returns:
+          chroms_idx: int32 tensor [N_vocab]
+          positions:  int32 tensor [N_vocab]
+        """
+        # CpGPT packs an illumina metadata DB and manifests under dependencies/{human}/...
+        # DNALLMEmbedder has already loaded metadata dicts; we use its helper dicts:
+        #   - ensembl_metadata_dict[species]['vocab']: {'1':0, '2':1, ..., 'X':22, ...}
+        #   - illumina probe -> genomic coordinate mapping is also exposed in embedder.
+        # The embedder exposes a dict: embedder.illumina_metadata_dict[species]['cpg_to_loc']
+        # where each entry is (chrom_label, position). If your local clone uses a different key,
+        # update here accordingly.
+
+        # Try preferred attribute first, then fallback via manifests.
+        if hasattr(self.embedder, "illumina_metadata_dict"):
+            d = self.embedder.illumina_metadata_dict[self.species_key]
+            if "cpg_to_loc" in d:
+                cpg_to_loc = d["cpg_to_loc"]  # { 'cg00000029': ('16', 53468180), ... }
+            else:
+                raise RuntimeError(
+                    "DNALLMEmbedder missing 'cpg_to_loc'. Update CpGPT or adjust mapping access here."
+                )
+        else:
+            raise RuntimeError(
+                "DNALLMEmbedder does not expose 'illumina_metadata_dict'. "
+                "Update to the current CpGPT repo and ensure dependencies are complete."
+            )
+
+        chroms_idx = []
+        positions = []
+        vocab_map = self.embedder.ensembl_metadata_dict[self.species_key]["vocab"]  # {'1':0, '2':1, ...}
+        for probe in self.vocab_sites:
+            try:
+                chrom_label, pos = cpg_to_loc[probe]
+            except KeyError:
+                # Unknown probe — create a dummy pad token by mapping to an impossible location 0
+                # CpGPT handles mask_na per-site; we still need integer placeholders.
+                chroms_idx.append(-1)
+                positions.append(-1)
+                continue
+            # map chromosome string to int index
+            if chrom_label.startswith("chr"):
+                chrom_label = chrom_label.replace("chr", "")
+            if chrom_label not in vocab_map:
+                chroms_idx.append(-1)
+                positions.append(-1)
+                continue
+            chroms_idx.append(int(vocab_map[chrom_label]))
+            positions.append(int(pos))
+
+        chroms_idx = torch.tensor(chroms_idx, dtype=torch.int32)
+        positions = torch.tensor(positions, dtype=torch.int32)
+        return chroms_idx, positions
+
+    def _get_dna_embeddings_for_vocab(self, batch_size: int) -> torch.Tensor:
+        """
+        Looks up the DNA-LLM embedding vector for each CpG site in vocab, then repeats across batch.
+
+        Returns:
+          seq_emb: float32 tensor [B, N_vocab, E]
+        """
+        chroms_idx, positions = self._get_chrom_pos_for_vocab()
+        # convert chrom int -> label with reverse_vocab, then build 'label:pos' strings used by index dict
+        loc_keys: List[str] = []
+        for c, p in zip(chroms_idx.tolist(), positions.tolist()):
+            if c < 0 or p < 0:
+                loc_keys.append(None)  # missing site — we'll fill zeros
+            else:
+                chrom_label = self._reverse_vocab[c]  # '1', '2', 'X', ...
+                loc_keys.append(f"{chrom_label}:{p}")
+
+        indices: List[int] = []
+        for key in loc_keys:
+            if key is None or key not in self._embedding_index_dict:
+                indices.append(-1)
+            else:
+                indices.append(int(self._embedding_index_dict[key]))
+
+        # Gather rows from memmap; fill zeros for missing indices
+        embs = np.zeros((self.n_vocab, self._llm_embed_dim), dtype=np.float32)
+        for i, idx in enumerate(indices):
+            if idx >= 0:
+                embs[i] = self._dna_mmap[idx]
+        seq_emb = torch.from_numpy(embs).unsqueeze(0).repeat(batch_size, 1, 1)  # [B, N, E]
+        return seq_emb.to(self.device)
+
+    def _apply_lora(self, module: nn.Module, cfg: Dict[str, Any]) -> None:
+        """
+        Injects LoRA adapters into CpGPT Linear layers.
+        cfg keys: r, alpha, dropout, target_modules (optional, list of substrings)
+        """
+        from peft import LoraConfig, get_peft_model  # lazy import
+        r = int(cfg.get("r", 8))
+        alpha = int(cfg.get("alpha", 16))
+        dropout = float(cfg.get("dropout", 0.0))
+        target_modules: List[str] = cfg.get("target_modules", [])
+
+        lora_cfg = LoraConfig(
+            r=r,
+            lora_alpha=alpha,
+            lora_dropout=dropout,
+            bias="none",
+            task_type="FEATURE_EXTRACTION",
+            target_modules=target_modules if target_modules else None,
+        )
+        peft_model = get_peft_model(module, lora_cfg)
+        self.net = peft_model
+        self._lora_on = True
 
 
 def _build_cpgpt_model(
-    checkpoint_root: Path | str,
-    in_features: int,
-    out_features: int,
-    learned_site_emb: bool = True,
-    seq_dim: int = 256,
-    freeze_cpgpt: bool = True,
+    checkpoint_root: str | Path,
+    in_features: int,    # unused by CpGPT; kept for API parity with your encoder wrapper
+    out_features: int,   # desired projection size after CpGPT; you can keep CpGPT's native dim too
     **kwargs: Any,
 ) -> nn.Module:
     """
-    Factory used by your encoder wrapper.
+    Factory used by your `GexpEncoder` case 'cpgpt'.
 
-    Args
-    ----
-    checkpoint_root: path to a CpGPT lightning .ckpt file or a directory containing it.
-    in_features:     number of CpG sites (must match your vector length).
-    out_features:    target trunk output size before the projection head in the outer encoder.
-
-    Returns
-    -------
-    nn.Module that maps [B, in_features] -> [B, out_features]
+    Returns:
+      A nn.Module that maps beta vectors [B, N_vocab] to CpGPT embeddings [B, D].
+      If you want an additional projection head to reach `out_features`, add it in the caller.
     """
-    ckpt_path = Path(checkpoint_root)
-    if ckpt_path.is_dir():
-        found = _find_ckpt_file(ckpt_path)
-        if found is None:
-            raise FileNotFoundError(f"No CpGPT .ckpt found under {ckpt_path}")
-        ckpt_path = found
-    trunk = CpGPTBackbone(
-        ckpt_path=ckpt_path,
-        num_sites=in_features,
-        out_dim=out_features,
-        learned_site_emb=learned_site_emb,
-        seq_dim=seq_dim,
-        freeze_cpgpt=freeze_cpgpt,
+    bb = CpGPTBackbone(
+        dependencies_root=str(checkpoint_root),
+        model_name=kwargs.get("model_name", "cancer"),
+        species_dir=kwargs.get("species_dir", "human"),
+        species_key=kwargs.get("species_key", "homo_sapiens"),
+        dna_llm=kwargs.get("dna_llm", "nucleotide-transformer-v2-500m-multi-species"),
+        dna_context_len=int(kwargs.get("dna_context_len", 2001)),
+        finetune_lora=kwargs.get("finetune", False),
+        device=kwargs.get("device", "cuda" if torch.cuda.is_available() else "cpu"),
     )
-    return trunk
+
+    # If caller wants a projection to out_features, wrap with a small head
+    if out_features > 0 and out_features != bb.embed_dim:
+        head = nn.Sequential(
+            nn.Linear(bb.embed_dim, max(out_features, bb.embed_dim)),
+            nn.GELU(),
+            nn.Linear(max(out_features, bb.embed_dim), out_features),
+        )
+        return nn.Sequential(OrderedForward(bb), head)
+
+    return bb
+
+
+class OrderedForward(nn.Module):
+    """
+    Tiny adapter so nn.Sequential(bb, head) calls bb.forward(x) instead of expecting dicts.
+    """
+    def __init__(self, module: nn.Module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.module(x)
