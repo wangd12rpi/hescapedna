@@ -1,5 +1,5 @@
 from hescape.models.clip import CLIPModel
-from hescape.models.gexp_models import GexpEncoder
+from hescape.models.dnameth_models.dnameth_encoder import DnaMethEncoder
 from hescape.models.image_models.image_encoder import ImageEncoder
 
-__all__ = ["ImageEncoder", "GexpEncoder", "CLIPModel"]
+__all__ = ["ImageEncoder", "DnaMethEncoder", "CLIPModel"]

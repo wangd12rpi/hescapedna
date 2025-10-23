@@ -20,7 +20,7 @@ from torchmetrics.regression import MeanSquaredError, PearsonCorrCoef, SpearmanC
 
 from hescape.constants import DatasetEnum
 from hescape.models._utils import print_trainable_parameters
-from hescape.models.gexp_models import GexpEncoder
+from hescape.models.dnameth_models import DnaMethEncoder
 from hescape.models.image_models import ImageEncoder
 
 
@@ -47,13 +47,13 @@ class CLIPModel(nn.Module):
 
     def __init__(
         self,
-        input_genes: int,
+        input_sites: int,
         embed_dim: int,
         img_enc_name: Literal["ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"],
-        gene_enc_name: Literal["drvi", "nicheformer", "scfoundation", "uce", "generic"],
+        dnameth_enc_name: str,
         loss: Literal["CLIP", "SIGLIP"],
         img_finetune: bool = False,
-        gene_finetune: bool = False,
+        dnameth_finetune: bool = False,
         n_tissue: int | None = None,
         n_region: int | None = None,
         image_size: int = 224,
@@ -75,22 +75,18 @@ class CLIPModel(nn.Module):
             global_pool=kwargs.get("global_pool", False),
         )
 
-        self.gene_enc_name = gene_enc_name
-        self.gexp_encoder = GexpEncoder(
-            input_genes=input_genes,
-            model_name=gene_enc_name,
-            checkpoint_path=kwargs.get("gene_enc_path", None),
-            drvi_model_dir=kwargs.get("drvi_model_dir", None),
-            n_region=n_region,
-            n_tissue=n_tissue,
-            finetune=gene_finetune,  # (Always fine-tune gene encoder)
+        self.dnameth_enc_name = dnameth_enc_name
+        self.dnameth_encoder = DnaMethEncoder(
+            input_sites=input_sites,
+            model_name=dnameth_enc_name,
+            checkpoint_path=kwargs.get("dnameth_enc_path", kwargs.get("gene_enc_path", None)),
+            finetune=dnameth_finetune,
             embed_dim=embed_dim,
-            proj=kwargs.get("gene_proj", "linear"),
-            # idx_genes_target=cfg.paths.idx_genes_target,
+            proj=kwargs.get("dnameth_proj", kwargs.get("gene_proj", "identity")),
         )
 
         print_trainable_parameters(img_enc_name, self.image_encoder)
-        print_trainable_parameters(gene_enc_name, self.gexp_encoder)
+        print_trainable_parameters(dnameth_enc_name, self.dnameth_encoder)
 
         # ------------------------
         # 2) CLIP Loss Setup
@@ -109,33 +105,37 @@ class CLIPModel(nn.Module):
         self.loss = loss_fn
 
     def forward(self, batch: dict[str, Tensor], norm: bool = True):
-        """Forward pass: returns (img_embed, gexp_embed, logit_scale.exp())."""
-        gexp_encoder_input = batch[DatasetEnum.GEXP]
-        region, tissue = None, None
+        """Forward pass: returns (img_embed, dnameth_embed, logit_scale.exp())."""
+        dnameth_input = batch[DatasetEnum.DNAMETH]
 
-        # Encode gene expressions
-        gexp_embed = self.gexp_encoder(gexp_encoder_input, tissue, region)
+        if isinstance(dnameth_input, torch.Tensor):
+            raise TypeError(
+                "DnaMethEncoder expects a list of beta file paths. "
+                "Ensure the datamodule is configured with beta_representation='path'."
+            )
+
+        dnameth_embed = self.dnameth_encoder(dnameth_input)
         # Encode images
         img_embed = self.image_encoder(batch[DatasetEnum.IMG])
 
         if norm:
             return (
                 F.normalize(img_embed, p=2, dim=-1),
-                F.normalize(gexp_embed, p=2, dim=-1),
+                F.normalize(dnameth_embed, p=2, dim=-1),
                 self.logit_scale.exp(),
             )
-        return img_embed, gexp_embed, self.logit_scale.exp()
+        return img_embed, dnameth_embed, self.logit_scale.exp()
 
-    def compute_loss(self, img_embed, gexp_embed):  # default 1.0
+    def compute_loss(self, img_embed, dnameth_embed):  # default 1.0
         """
         Compute the total loss comprising:
           - Contrastive CLIP loss.
         """
         if self.logit_bias is not None:
             contrastive_loss = self.loss(
-                img_embed, gexp_embed, logit_scale=self.logit_scale.exp(), logit_bias=self.logit_bias
+                img_embed, dnameth_embed, logit_scale=self.logit_scale.exp(), logit_bias=self.logit_bias
             )
         else:
-            contrastive_loss = self.loss(img_embed, gexp_embed, logit_scale=self.logit_scale.exp())
+            contrastive_loss = self.loss(img_embed, dnameth_embed, logit_scale=self.logit_scale.exp())
 
         return contrastive_loss

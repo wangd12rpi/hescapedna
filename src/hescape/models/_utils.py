@@ -140,7 +140,7 @@ class SourceAwareContrastiveLoss(nn.Module):
 def print_trainable_parameters(name, model):
     """Prints the number of trainable parameters in the model."""
     trainable_params = 0
-    all_param = 0
+    all_param = 1
     for _, param in model.named_parameters():
         all_param += param.numel()
         if param.requires_grad:

@@ -1,7 +1,7 @@
 _target_: hescape.data_modules.dnameth_wsi_dataset.DnaMethWSIDataModule
 root_dir: ${paths.data_root_dir}/train # Paths in JSONL are relative to train/
 jsonl_path: ${paths.data_root_dir}/train/index_tile.jsonl
-batch_size: 8
+#batch_size: 1
 num_workers: 4
 pin_memory: true
 persistent_workers: true

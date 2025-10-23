@@ -2,7 +2,7 @@ defaults:
   - anatomy: lung_healthy
 
 dataset_path : /home/exouser/Public/modified/human_lung_panel
-data_files_path: ${project_root:}/data
+data_files_path: ${project_root:}/data/wsi_dnameth
 
 # base_splits_path: /p/project1/hai_spatial_clip/hescape/data
 
@@ -11,8 +11,8 @@ base_output_path: ${project_root:}/../results
 
 pretrain_weights:
   img_enc_path: /home/exouser/Public/pretrained_weights/image
-  gene_enc_path: /home/exouser/Public/pretrained_weights/gene
-  cpgpt_checkpoint_path: /home/exouser/Public/pretrained_weights/gene/cpgpt
+  gene_enc_path: /media/volume/patho_meth/hescapedna/data/cpgpt_files/dependencies
+  cpgpt_checkpoint_path: /media/volume/patho_meth/hescapedna/data/cpgpt_files
   base_data_gene_reference_path: /p/project1/hai_spatial_clip/hescape/data
 
 data_root_dir: ${project_root:}/data/wsi_dnameth

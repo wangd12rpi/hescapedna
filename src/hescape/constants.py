@@ -11,7 +11,8 @@ class DatasetEnum(str, Enum):
 
     NAME = "name"
     IMG = "image"
-    GEXP = "gexp"
+    GEXP = "gexp"  # legacy alias for DNA methylation values
+    DNAMETH = "gexp"
     COORDS = "cell_coords"
     SOURCE = "source"
     ATLAS = "atlas"

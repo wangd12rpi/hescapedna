@@ -12,17 +12,28 @@ from peft import LoraConfig, get_peft_model
 from timm.layers import Mlp
 
 from hescape.models._utils import print_trainable_parameters
-#from hescape.models.image_models._conch import _build_conch_model
-from hescape.models.image_models._ctranspath import _build_ctranspath_model
-from hescape.models.image_models._h0_mini import _build_h0_mini_model
 from hescape.models.image_models._utils import freeze_batch_norm_2d
-from hescape.models.image_models._gigapath import (
-    _build_gigapath_model,
-    load_tiles_from_gigapath_json,
-    GigaPathSlideEncoder,
-)
-
+from hescape.models.image_models._gigapath import _build_gigapath_model
+from gigapath import pipeline
+import os
 from .moe import MoE
+from pathlib import Path
+import logging
+from contextlib import contextmanager, redirect_stdout, redirect_stderr
+
+project_root = next(p for p in Path(__file__).parents if (p / '.git').exists())
+
+
+
+@contextmanager
+def quiet_encoding():
+    old_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    with open(os.devnull, "w") as devnull, redirect_stdout(devnull), redirect_stderr(devnull):
+        try:
+            yield
+        finally:
+            logging.disable(old_disable)
 
 class MoEHeadAdapter(nn.Module):
     def __init__(
@@ -68,7 +79,7 @@ class ImageEncoder(nn.Module):
 
     def __init__(
         self,
-        model_name: Literal["ctranspath", "densenet", "uni", "optimus", "conch", "gigapath", "h0-mini"] | str,
+        model_name: Literal["gigapath"] | str,
         finetune: bool = False,
         embed_dim: int = -1,
         proj: str = "mlp",
@@ -77,135 +88,43 @@ class ImageEncoder(nn.Module):
         super().__init__()
         self.model_name = model_name
 
-        # Special mode for gigapath: use slide-level encoding
-        self.use_slide_encoder = (model_name == "gigapath" and kwargs.get("use_slide_encoder", True))
-
-        # Build trunk model
-        checkpoint_root = Path(kwargs.get("checkpoint_path", ""))
-        self.trunk, self.total_blocks = self._build_trunk(self.model_name, checkpoint_root, **kwargs)
+        self.trunks, self.total_blocks = self._build_trunks(self.model_name, **kwargs)
 
         if not finetune:  # i.e if finetune is false, we freeze the trunk
             self.freeze()
 
-        self.trunk = self.get_ft_model(model_name, self.trunk, lora=finetune)
+        self.trunks = self.get_ft_model(model_name, self.trunks, lora=finetune)
 
         # Build projection head
         self.proj = proj
-        self.head = self._build_head(proj, self.trunk.num_features, embed_dim)
+        self.head = self._build_head(proj, 768, embed_dim)
 
         # return hook
 
-    def _build_trunk(self, model_name: str, checkpoint_root: Path, **kwargs: Any) -> tuple[nn.Module, int]:
+    def _build_trunks(self, model_name: str, **kwargs: Any) -> tuple[nn.Module, int]:
         """
         Build the trunk (backbone) model for image encoding.
         Returns (trunk_module, total_blocks).
         """
-        if model_name == "densenet":
-            trunk = timm.create_model("densenet121.tv_in1k", pretrained=True, num_classes=0)
-            print(f"Successfully loaded weights for {model_name}")
-            total_blocks = 4  # Fine-tune up to 2
 
-        elif model_name == "ctranspath":
-            trunk = _build_ctranspath_model()
-            checkpoint_path = checkpoint_root / model_name / "ctranspath.pth"
-            trunk.load_state_dict(torch.load(checkpoint_path, weights_only=True), strict=False)
-            print(f"Successfully loaded weights for {model_name}")
-
-            total_blocks = 4  # Fine-tune up to 2
-
-        elif model_name == "uni":
-            trunk = timm.create_model(
-                "vit_large_patch16_224",
-                img_size=224,
-                patch_size=16,
-                init_values=1e-5,
-                num_classes=0,
-                dynamic_img_size=True,
-            )
-            checkpoint_path = checkpoint_root / model_name / "pytorch_model.bin"
-            trunk.load_state_dict(torch.load(checkpoint_path, weights_only=True), strict=True)
-            print(f"Successfully loaded weights for {model_name}")
-
-            total_blocks = 24  # Fine-tune up to 8
-
-        elif model_name == "optimus":
-            trunk = timm.create_model(
-                "hf-hub:bioptimus/H-optimus-0", pretrained=False, init_values=1e-5, dynamic_img_size=False
-            )
-            checkpoint_path = checkpoint_root / model_name / "pytorch_model.bin"
-            trunk.load_state_dict(torch.load(checkpoint_path, weights_only=True), strict=True)
-            print(f"Successfully loaded weights for {model_name}")
-
-            total_blocks = 40  # Fine-tune up to 12
-
-        elif model_name == "h0-mini":  # to be refined
-            checkpoint_path = checkpoint_root / model_name / "pytorch_model.bin"
-            model = _build_h0_mini_model(str(checkpoint_path))
-            print(f"Successfully loaded weights for {model_name}")
-
-            trunk = model.trunk
-
-            total_blocks = 12  # Fine-tune up to 12
-
-        elif model_name == "conch":
-            checkpoint_path = checkpoint_root / model_name / "pytorch_model.bin"
-            model = _build_conch_model(str(checkpoint_path))
-            print(f"Successfully loaded weights for {model_name}")
-
-            trunk = model.visual.trunk
-
+        if model_name == "gigapath":
+            trunks = _build_gigapath_model()
+            print(f"Successfully loaded GigaPath slide encoder for {model_name}")
             total_blocks = 12
-
-        elif model_name == "gigapath":
-            # For DNA methylation: use slide encoder to aggregate tiles
-            use_slide_encoder = kwargs.get("use_slide_encoder", True)
-            if use_slide_encoder:
-                # Build slide encoder for slide-level embeddings
-                trunk = _build_gigapath_model(
-                    checkpoint_path=checkpoint_root / model_name,
-                    mode="slide",
-                    freeze=not kwargs.get("finetune", False),
-                    global_pool=kwargs.get("global_pool", False),
-                )
-                print(f"Successfully loaded GigaPath slide encoder for {model_name}")
-                total_blocks = 12
-            else:
-                # Original tile encoder mode
-                checkpoint_path = checkpoint_root / model_name / "pytorch_model.bin"
-                trunk = timm.create_model("hf_hub:prov-gigapath/prov-gigapath", pretrained=False)
-                trunk.load_state_dict(torch.load(checkpoint_path, weights_only=True), strict=True)
-                print(f"Successfully loaded GigaPath tile encoder for {model_name}")
-                total_blocks = 12
 
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 
-        return trunk, total_blocks
+        return trunks, total_blocks
 
-    def get_ft_model(self, model_name: str, trunk, lora: bool = False) -> object:
-        """
-        Returns a fine-tuned model based on the given model name and trunk.
-
-        Args:
-            model_name (str): The name of the model.
-            trunk: The trunk model.
-            lora (bool, optional): Whether to use LoRA. Defaults to False.
-
-        Returns
-        -------
-            object: The fine-tuned model.
-        """
+    def get_ft_model(self, model_name: str, trunks, lora: bool = False) -> object:
         # Define LoRA configurations for each model
         lora_configs = {
-            "ctranspath": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "attn.proj"]},
-            "uni": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
-            "conch": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
-            "optimus": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
-            "h0-mini": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
             "gigapath": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
         }
 
         if lora:
+            print("**LoRA Enabled for Slide Encoder**")
             # Get the LoRA configuration for the given model
             if model_name in lora_configs.keys():
                 config = lora_configs.get(model_name)
@@ -219,13 +138,12 @@ class ImageEncoder(nn.Module):
                         bias="none",
                     )
                     # Return the fine-tuned model with LoRA
-                    return get_peft_model(trunk, lora_config)
+                    return get_peft_model(trunks[0], lora_config), get_peft_model(trunks[1], lora_config)
                 else:
                     # Handle unknown model names
                     raise ValueError(f"Unknown model name: {model_name}")
 
-        # If LoRA is not enabled, return the original trunk
-        return trunk  # it simply returns the trunk for densenet
+        return trunks
 
     def _build_head(self, proj: str, in_features: int, embed_dim: int) -> nn.Sequential:
         """Build a projection head (Linear or MLP)."""
@@ -253,90 +171,50 @@ class ImageEncoder(nn.Module):
                 noisy_gating=True,
                 acc_aux_loss=False,
             )
-        
+
         return nn.Sequential(head_layers)
 
     def freeze(self, freeze_bn_stats=True):
         """Freeze model params."""
-        for param in self.trunk.parameters():
-            param.requires_grad = False
-        if freeze_bn_stats:
-            freeze_batch_norm_2d(self.trunk)
+        for x in self.trunks:
+            for param in x.parameters():
+                param.requires_grad = False
+            if freeze_bn_stats:
+                freeze_batch_norm_2d(x)
 
     def forward(self, x):
         """
         Forward pass.
 
         Args:
-            x: For most models: Tensor of shape [B, C, H, W]
-               For GigaPath slide encoder: List of tile JSON paths (strings)
+            x: list of tile paths
 
         Returns:
             Embeddings of shape [B, embed_dim]
         """
-        # Special case: GigaPath slide encoder with tile JSON paths
-        if self.use_slide_encoder and isinstance(x, (list, tuple)):
-            # x is a list of paths to tile JSON directories
-            return self._forward_gigapath_slide(x)
 
-        # Standard image encoder path
-        features = {}
+        tile_encoder, slide_encoder = self.trunks
+
+        embeds = []
 
         if self.proj in ["mlp", "linear", "moe"]:
+            for slide_dir in x:
+                image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith('.png')]
+                with quiet_encoding():
+                    tile_encoder_outputs = pipeline.run_inference_with_tile_encoder(image_paths, tile_encoder,
+                                                                                    batch_size=512)
+                    slide_embeds = pipeline.run_inference_with_slide_encoder(slide_encoder_model=slide_encoder,
+                                                                             **tile_encoder_outputs)
+                embeds.append(slide_embeds['last_layer_embed'])
 
-            x = self.trunk(x)
-
-            if self.model_name in ["conch", "h0-mini"]:
-                x = x[:, 0, :]
-            x = self.head(x)
-
-
-        elif self.proj == "transformer":
-
-            tokens = self.trunk.forward_features(x)
-            x = self.head(tokens)
-            x = x[:, 0, :]
-
-
+            # Stack to preserve gradient flow through batch dimension
+            embeds = torch.stack([e.squeeze(0) if e.dim() > 2 else e for e in embeds], dim=0)
+            embeds = self.head(embeds)
 
         else:
             print(f"[ENCODER DEBUG] No branch matched for proj={self.proj}, returning raw x={x.shape}")
 
-
-        return x.contiguous()  # Ensure contiguous memory layout
-
-    def _forward_gigapath_slide(self, tile_json_paths: list[str]) -> torch.Tensor:
-        """
-        Forward pass for GigaPath slide encoder.
-
-        Args:
-            tile_json_paths: List of paths to tile JSON directories (batch size = len(paths))
-
-        Returns:
-            Slide embeddings [B, embed_dim]
-        """
-        batch_embeds = []
-
-        for tile_path in tile_json_paths:
-            # Load tile embeddings and coordinates from GigaPath output
-            tile_embeds, coords = load_tiles_from_gigapath_json(tile_path)
-
-            # Move to device
-            device = next(self.trunk.parameters()).device
-            tile_embeds = tile_embeds.to(device)
-            coords = coords.to(device)
-
-            # Run slide encoder: expects [1, N_tiles, 1536] and [1, N_tiles, 2]
-            slide_embed = self.trunk(tile_embeds.unsqueeze(0), coords.unsqueeze(0))  # [1, 1536]
-            batch_embeds.append(slide_embed)
-
-        # Stack into batch
-        batch_embeds = torch.cat(batch_embeds, dim=0)  # [B, 1536]
-
-        # Apply projection head
-        batch_embeds = self.head(batch_embeds)
-
-        return batch_embeds.contiguous()
+        return embeds
 
 
 if __name__ == "__main__":

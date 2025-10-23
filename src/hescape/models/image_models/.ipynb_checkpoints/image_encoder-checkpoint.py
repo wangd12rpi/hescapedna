@@ -135,7 +135,7 @@ class ImageEncoder(nn.Module):
             model = _build_h0_mini_model(str(checkpoint_path))
             print(f"Successfully loaded weights for {model_name}")
 
-            trunk = model.trunk
+            trunk = model.trunks
 
             total_blocks = 12  # Fine-tune up to 12
 
@@ -144,7 +144,7 @@ class ImageEncoder(nn.Module):
             model = _build_conch_model(str(checkpoint_path))
             print(f"Successfully loaded weights for {model_name}")
 
-            trunk = model.visual.trunk
+            trunk = model.visual.trunks
 
             total_blocks = 12
 
@@ -233,7 +233,7 @@ class ImageEncoder(nn.Module):
                 noisy_gating=True,
                 acc_aux_loss=False,
             )
-        
+
         return nn.Sequential(head_layers)
 
     def freeze(self, freeze_bn_stats=True):
@@ -245,31 +245,31 @@ class ImageEncoder(nn.Module):
 
     def forward(self, x):
         """Forward pass."""
-        
-    
+
+
         features = {}
-    
+
         if self.proj in ["mlp", "linear","moe"]:
-            
+
             x = self.trunk(x)
-            
+
             if self.model_name in ["conch", "h0-mini"]:
                 x = x[:, 0, :]
             x = self.head(x)
-            
-    
+
+
         elif self.proj == "transformer":
-            
+
             tokens = self.trunk.forward_features(x)
             x = self.head(tokens)
             x = x[:, 0, :]
-            
-           
-    
+
+
+
         else:
             print(f"[ENCODER DEBUG] No branch matched for proj={self.proj}, returning raw x={x.shape}")
-    
-        
+
+
         return x.contiguous()  # Ensure contiguous memory layout
 
 

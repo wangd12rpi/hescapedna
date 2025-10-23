@@ -3,13 +3,13 @@ litmodule:
   _partial_: true
   input_genes: 0  # Will be set dynamically after datamodule setup for DNA meth
   embed_dim: 128
-  img_enc_name: uni # options: "ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"
-  gene_enc_name: scfoundation # "drvi", "nicheformer", "scfoundation", "uce", "generic"
+  img_enc_name: gigapath # options: "ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"
+  gene_enc_name: cpgpt
   loss: SIGLIP
-  img_finetune: false # true or false
-  gene_finetune: true # true or false
+  img_finetune: true # true or false
+  gene_finetune: false # CpGPT stays frozen
   img_proj: linear # options: "linear", "mlp", "transformer"
-  gene_proj: linear # options: "linear", "mlp", "identity"
+  gene_proj: identity # CpGPT embeddings arrive in final dimension
   n_tissue:
   n_region:
   image_size: 224

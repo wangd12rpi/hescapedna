@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import os
 from collections.abc import Callable
-from typing import Literal
+from typing import Any, Literal
 
 import pytorch_lightning as pl
 import torch
@@ -47,12 +47,12 @@ class PretrainModule(LightningModule):
         input_genes: int,
         embed_dim: int,
         img_enc_name: Literal["ctranspath", "uni", "conch", "optimus", "densenet", "gigapath"],
-        gene_enc_name: Literal["drvi", "nicheformer", "uce", "scfoundation", "generic"],
+        gene_enc_name: str,
         loss: Literal["CLIP", "SIGLIP"],
         img_finetune: bool,
         gene_finetune: bool,
         img_proj: Literal["linear", "mlp", "transformer"],
-        gene_proj: Literal["linear", "mlp", "identity"],
+        gene_proj: Literal["identity", "linear", "mlp"],
         n_tissue: int,
         n_region: int,
         image_size: int,
@@ -79,19 +79,19 @@ class PretrainModule(LightningModule):
         else:
             logger.info("CUDA is not available.")
 
-        # Determine gene_enc_path: use cpgpt path if cpgpt is the model
-        gene_enc_path = self.cfg.paths.pretrain_weights.gene_enc_path
-        if gene_enc_name == "cpgpt" and hasattr(self.cfg.paths.pretrain_weights, "cpgpt_checkpoint_path"):
-            gene_enc_path = self.cfg.paths.pretrain_weights.cpgpt_checkpoint_path
+        # Determine DNA methylation encoder path
+        dnameth_enc_path = getattr(self.cfg.paths.pretrain_weights, "gene_enc_path", None)
+        if hasattr(self.cfg.paths.pretrain_weights, "cpgpt_checkpoint_path"):
+            dnameth_enc_path = self.cfg.paths.pretrain_weights.cpgpt_checkpoint_path
 
         self.model = CLIPModel(
-            input_genes=input_genes,
+            input_sites=input_genes,
             embed_dim=embed_dim,
             img_enc_name=img_enc_name,
             loss=loss,
             img_finetune=img_finetune,
-            gene_finetune=gene_finetune,
-            gene_enc_name=gene_enc_name,
+            dnameth_finetune=gene_finetune,
+            dnameth_enc_name=gene_enc_name,
             image_size=image_size,
             n_tissue=n_tissue,
             n_region=n_region,
@@ -99,11 +99,11 @@ class PretrainModule(LightningModule):
             world_size=world_size,
             rank=local_rank,
             img_enc_path=self.cfg.paths.pretrain_weights.img_enc_path,
-            gene_enc_path=gene_enc_path,
+            dnameth_enc_path=dnameth_enc_path,
             drvi_model_dir=self.cfg.paths.anatomy.pretrain_weights.drvi_model_dir if hasattr(self.cfg.paths, "anatomy") else None,
             cfg=cfg,
             img_proj=img_proj,
-            gene_proj=gene_proj,
+            dnameth_proj=gene_proj,
         )
         self.lambda_scheduler: Callable[[int], float] | None = lambda_scheduler
         self.lr = lr
@@ -130,7 +130,7 @@ class PretrainModule(LightningModule):
             
     def _get_moe_aux_loss(self) -> torch.Tensor:
         aux_total = torch.zeros((), device=self.device)
-        for enc in [getattr(self.model, "image_encoder", None), getattr(self.model, "gene_encoder", None)]:
+        for enc in [getattr(self.model, "image_encoder", None), getattr(self.model, "dnameth_encoder", None)]:
             if enc is None:
                 continue
             for m in enc.head.modules():
@@ -141,9 +141,21 @@ class PretrainModule(LightningModule):
                     aux_total = aux_total + val
         return aux_total
 
+    def _batch_size(self, batch: dict[str, Any]) -> int:
+        """Infer batch size for image inputs that may be tensors or slide path lists."""
+        images = batch.get("image")
+        if images is None:
+            raise KeyError("Batch missing 'image' key; cannot infer batch size.")
+        if isinstance(images, torch.Tensor):
+            return images.shape[0]
+        if isinstance(images, (list, tuple)):
+            return len(images)
+        if hasattr(images, "__len__"):
+            return len(images)  # fall back to generic containers (e.g., numpy arrays)
+        raise TypeError(f"Unsupported image batch type {type(images)!r} for size inference.")
 
     def training_step(self, batch, batch_idx):
-        bs = batch["image"].shape[0]
+        bs = self._batch_size(batch)
         main_loss, metrics = self.shared_step(batch, "train")
 
         aux_moe = self._get_moe_aux_loss()
@@ -163,30 +175,28 @@ class PretrainModule(LightningModule):
 
 
     def validation_step(self, batch, batch_idx):
-        bs = batch["image"].shape[0]
+        bs = self._batch_size(batch)
         _, metrics = self.shared_step(batch, "val")
         self.log_dict(metrics, sync_dist=True, batch_size=bs)
         return metrics
 
     def test_step(self, batch, batch_idx):
-        bs = batch["image"].shape[0]
+        bs = self._batch_size(batch)
         _, metrics = self.shared_step(batch, "test")
         self.log_dict(metrics, sync_dist=True, batch_size=bs)
         return metrics
 
     def shared_step(self, batch, stage: str):
-        img_embed, gexp_embed, logit_scale = self.model(batch, norm=False)
+        img_embed, meth_embed, logit_scale = self.model(batch, norm=False)
         # For batch "ID" and "GEXP"
         # source_ids = batch[DatasetEnum.ID].to(torch.int64)
         # source_exp = batch[DatasetEnum.GEXP].to(img_embed.dtype)
 
-        contrastive_loss = self.model.compute_loss(  # recon_loss, cls_loss
-            img_embed=img_embed, gexp_embed=gexp_embed
-        )
+        contrastive_loss = self.model.compute_loss(img_embed=img_embed, dnameth_embed=meth_embed)
 
         metrics = {f"{stage}_loss": contrastive_loss}
 
-        knn_recall_i2g = get_clip_metrics(img_embed, gexp_embed, logit_scale=logit_scale, stage=stage)
+        knn_recall_i2g = get_clip_metrics(img_embed, meth_embed, logit_scale=logit_scale, stage=stage)
         metrics.update(knn_recall_i2g)
 
         return contrastive_loss, metrics
@@ -195,13 +205,13 @@ class PretrainModule(LightningModule):
         return self.model(batch)
 
 
-def get_clip_metrics(image_features, gene_features, logit_scale, stage: str):
+def get_clip_metrics(image_features, dnameth_features, logit_scale, stage: str):
     metrics = {}
-    logits_per_image = logit_scale * image_features @ gene_features.T
-    logits_per_gene = logits_per_image.T
+    logits_per_image = logit_scale * image_features @ dnameth_features.T
+    logits_per_dnameth = logits_per_image.T
 
-    logits = {"image_to_gene": logits_per_image, "gene_to_image": logits_per_gene}
-    ground_truth = torch.arange(len(gene_features), device=gene_features.device).contiguous().view(-1, 1)
+    logits = {"image_to_dnameth": logits_per_image, "dnameth_to_image": logits_per_dnameth}
+    ground_truth = torch.arange(len(dnameth_features), device=dnameth_features.device).contiguous().view(-1, 1)
 
     # metrics for +ve and -ve pairs
     for name, logit in logits.items():
