@@ -1,0 +1,81 @@
+# @package _global_
+
+# ===== Basic Configuration =====
+defaults:
+  - override /model/net: small          # Options: small or large
+  - override /model/optimizer: adamwschedulefree  # Recommended optimizer
+  - override /model/scheduler: constant
+  - override /logger: csv
+  - _self_
+
+tags: ["experiment_name", "finetuning", "mydata"]
+
+seed: 42
+
+# ===== Model Configuration =====
+model:
+  training:
+    binarize_input: false
+    # Options for condition_decoder_loss:
+    # - mae: Mean Absolute Error
+    # - mse: Mean Squared Error
+    # - bce: Binary Cross Entropy
+    # - ce: Cross Entropy (single-class classification/softmax)
+    condition_decoder_loss: mae
+
+    # Generative splits configuration:
+    # - 1: Model sees the entire input
+    # - 2: Model sees half of the input (slightly more generalizable, slightly worse performance)
+    # - 3+: Generative training with N splits (even more generalizable, slightly worse performance)
+    generative_splits: 1
+
+    loss_weights:
+      # Recommended: the condition loss should be about half of the total loss
+      # Experiment with different values for your specific dataset
+      condition_loss: 0.1
+
+  optimizer:
+    lr: 0.0001
+
+  net:
+    use_condition_decoder: true
+    condition_size: 1  # Number of target variables to predict
+
+# ===== Training Configuration =====
+trainer:
+  min_steps: 2000   # Use warmup steps of about 2-5% of total steps
+  max_steps: 100000
+
+# ===== Data Configuration =====
+data:
+
+  _target_: cpgpt.data.cpgpt_datamodule.CpGPTDataModule
+
+  batch_size: 16
+
+  # Data paths - see quick setup tutorial for data preparation instructions
+  train_dir: ${paths.data_dir}/mydata/processed/train
+  val_dir: ${paths.data_dir}/mydata/processed/val
+  test_dir: ${paths.data_dir}/mydata/processed/test
+  dependencies_dir: ${paths.dependencies_dir}/human
+
+  # Maximum length of input sequence
+  max_length: 20000
+
+# ===== Callback Configuration =====
+callbacks:
+  model_checkpoint:
+    monitor: "val/condition_loss"
+    filename: "step_{step:06d}"
+
+# ===== Checkpoint Configuration =====
+# Set to false when loading pretrained models with different architectures
+strict_load: false
+
+# Path to pretrained model checkpoint (or train from scratch)
+model_ckpt_path: ${paths.dependencies_dir}/model/weights/small.ckpt
+
+# ===== Hydra Configuration =====
+hydra:
+  run:
+    dir: ${paths.log_dir}/experiments/${tags[0]}/${now:%Y-%m-%d_%H-%M-%S}

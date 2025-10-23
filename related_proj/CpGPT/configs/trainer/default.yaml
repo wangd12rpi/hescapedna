@@ -1,0 +1,31 @@
+_target_: lightning.pytorch.trainer.Trainer
+
+default_root_dir: ${paths.output_dir}
+
+min_steps: 2000 # prevents early stopping
+max_steps: 50000
+
+accelerator: auto
+devices: 1
+
+# mixed precision for extra speed-up
+precision: 16-mixed
+
+# perform a validation loop every N training steps
+val_check_interval: 1000
+
+# do not perform validation at the end of each epoch
+check_val_every_n_epoch: null
+
+# log every N steps
+log_every_n_steps: 1
+
+# detect NaNs in the model
+detect_anomaly: False
+
+# set True to to ensure deterministic results
+# makes training slower but gives more reproducibility than just setting seeds
+deterministic: False
+
+# accumulate gradients over N steps
+accumulate_grad_batches: 1

@@ -1,0 +1,13 @@
+defaults:
+  - model_checkpoint
+  - model_summary
+  - rich_progress_bar
+  - _self_
+
+model_checkpoint:
+  monitor: "val/loss"
+  mode: "min"
+  save_last: True
+
+model_summary:
+  max_depth: 3

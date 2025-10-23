@@ -1,0 +1,5 @@
+_target_: torchtune.modules.get_cosine_schedule_with_warmup
+_partial_: true
+num_warmup_steps: ${trainer.min_steps}
+num_training_steps: ${trainer.max_steps}
+num_cycles: 0.5

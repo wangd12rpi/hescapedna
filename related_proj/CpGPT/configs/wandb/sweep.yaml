@@ -1,0 +1,47 @@
+program: cpgpt/train.py
+metric:
+  name: val/loss_best
+  goal: minimize
+method: random
+parameters:
+  model.optimizer.lr:
+    min: !!float 5e-5
+    max: !!float 2e-3
+  model.scheduler.num_cycles:
+    values: [0.5, 1.5, 2.5]
+  model.net.n_layers:
+    values: [4, 8, 12]
+  model.net.d_hidden:
+    values: [64, 128, 256]
+  model.net.d_embedding:
+    values: [64, 128, 256]
+  model.net.activation:
+    values: ["swiglu", "gelu"]
+  model.net.positional_encoding:
+    values: ["none", "positional", "rotary"]
+  model.net.use_power_norm:
+    values: [true, false]
+  model.net.n_mlp_blocks:
+    values: [1, 2, 3, 4]
+  model.net.sample_embedding:
+    values: ["cls", "mean"]
+  model.net.dropout:
+    values: [0.0, 0.01, 0.05]
+  model.net.architecture:
+    values: ["transformer"]
+  model.training_style:
+    values: ["bert", "gpt"]
+  data.batch_size:
+    values: [4, 8]
+  data.sorting_strategy:
+    values: ["sorted_chromosome"]
+  data.dna_context_len:
+    values: [201, 501, 1001, 2001, 4001]
+  data.dna_llm:
+    values: ["nucleotide-transformer-v2-500m-multi-species"]
+
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - ${args_no_hyphens}

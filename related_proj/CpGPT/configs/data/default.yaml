@@ -1,0 +1,10 @@
+# Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+batch_size: 4
+
+dna_llm: nucleotide-transformer-v2-500m-multi-species
+max_length: 10000
+sorting_strategy: sorted_chromosome
+dna_context_len: 2001
+
+num_workers: 8
+pin_memory: False

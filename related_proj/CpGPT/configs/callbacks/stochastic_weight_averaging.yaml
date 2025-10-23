@@ -1,0 +1,5 @@
+stochastic_weight_averaging:
+  _target_: lightning.pytorch.callbacks.StochasticWeightAveraging
+  swa_epoch_start: ${trainer.min_steps}/${trainer.max_steps}
+  annealing_epochs: 3
+  swa_lrs: 0.02

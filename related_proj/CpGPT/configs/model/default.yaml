@@ -1,0 +1,9 @@
+_target_: cpgpt.model.cpgpt_module.CpGPTLitModule
+
+defaults:
+  - optimizer: adamwschedulefree
+  - scheduler: constant
+  - net: large
+  - training: default
+
+compile: true
