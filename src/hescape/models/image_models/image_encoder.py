@@ -12,6 +12,7 @@ from peft import LoraConfig, get_peft_model
 from timm.layers import Mlp
 
 from hescape.models._utils import print_trainable_parameters
+from hescape.models._cache import EmbeddingCache
 from hescape.models.image_models._utils import freeze_batch_norm_2d
 from hescape.models.image_models._gigapath import _build_gigapath_model
 from gigapath import pipeline
@@ -20,8 +21,6 @@ from .moe import MoE
 from pathlib import Path
 import logging
 from contextlib import contextmanager, redirect_stdout, redirect_stderr
-
-project_root = next(p for p in Path(__file__).parents if (p / '.git').exists())
 
 
 
@@ -99,6 +98,9 @@ class ImageEncoder(nn.Module):
         self.proj = proj
         self.head = self._build_head(proj, 768, embed_dim)
 
+        # Initialize cache for tile embeddings
+        self.tile_cache = EmbeddingCache('tile_embeddings')
+
         # return hook
 
     def _build_trunks(self, model_name: str, **kwargs: Any) -> tuple[nn.Module, int]:
@@ -120,7 +122,7 @@ class ImageEncoder(nn.Module):
     def get_ft_model(self, model_name: str, trunks, lora: bool = False) -> object:
         # Define LoRA configurations for each model
         lora_configs = {
-            "gigapath": {"r": 8, "lora_alpha": 16, "target_modules": ["qkv", "proj"]},
+            "gigapath": {"r": 4, "lora_alpha": 16, "target_modules": ["qkv"]},
         }
 
         if lora:
@@ -137,8 +139,16 @@ class ImageEncoder(nn.Module):
                         lora_dropout=0.1,
                         bias="none",
                     )
+
+                    lora_config_slide = LoraConfig(
+                        r=config["r"],
+                        lora_alpha=config["lora_alpha"],
+                        target_modules=["proj"],
+                        lora_dropout=0.1,
+                        bias="none",
+                    )
                     # Return the fine-tuned model with LoRA
-                    return get_peft_model(trunks[0], lora_config), get_peft_model(trunks[1], lora_config)
+                    return trunks[0], get_peft_model(trunks[1], lora_config_slide)
                 else:
                     # Handle unknown model names
                     raise ValueError(f"Unknown model name: {model_name}")
@@ -182,6 +192,18 @@ class ImageEncoder(nn.Module):
             if freeze_bn_stats:
                 freeze_batch_norm_2d(x)
 
+    def _load_tile_embeddings_cached(self, slide_dir: str, tile_encoder) -> dict:
+        """Load tile embeddings from cache or compute if not cached."""
+        def compute_tile_embeddings():
+            image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith('.png')]
+            with quiet_encoding():
+                with torch.no_grad():
+                    return pipeline.run_inference_with_tile_encoder(
+                        image_paths, tile_encoder, batch_size=64
+                    )
+
+        return self.tile_cache.get_or_compute(slide_dir, compute_tile_embeddings)
+
     def forward(self, x):
         """
         Forward pass.
@@ -199,16 +221,19 @@ class ImageEncoder(nn.Module):
 
         if self.proj in ["mlp", "linear", "moe"]:
             for slide_dir in x:
-                image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith('.png')]
-                with quiet_encoding():
-                    tile_encoder_outputs = pipeline.run_inference_with_tile_encoder(image_paths, tile_encoder,
-                                                                                    batch_size=512)
-                    slide_embeds = pipeline.run_inference_with_slide_encoder(slide_encoder_model=slide_encoder,
-                                                                             **tile_encoder_outputs)
+                # Load tile embeddings from cache or compute
+                tile_encoder_outputs = self._load_tile_embeddings_cached(slide_dir, tile_encoder)
+
+                slide_embeds = pipeline.run_inference_with_slide_encoder(
+                    slide_encoder_model=slide_encoder,
+                    **tile_encoder_outputs
+                )
+
                 embeds.append(slide_embeds['last_layer_embed'])
 
             # Stack to preserve gradient flow through batch dimension
-            embeds = torch.stack([e.squeeze(0) if e.dim() > 2 else e for e in embeds], dim=0)
+            embeds = torch.stack([e.squeeze(0) if e.dim() > 1 else e for e in embeds], dim=0)
+            # print(embeds.shape)
             embeds = self.head(embeds)
 
         else:

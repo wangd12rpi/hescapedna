@@ -35,7 +35,7 @@ datamodule:
 training:
   lightning:
     trainer:
-      max_steps: 20000
+      max_epochs: 100
       devices: 1
       num_nodes: 1
       strategy: auto

@@ -103,7 +103,7 @@ class DnaMethEncoder(nn.Module):
         Returns:
           features [B, embed_dim]
         """
-        # CpGPT embeddings [B, 128]
+        # CpGPT embeddings [B, 128] - caching is now handled inside CpGPTRunner
         with quiet_encoding():
             emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
         # Project if required

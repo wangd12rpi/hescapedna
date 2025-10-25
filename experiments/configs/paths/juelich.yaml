@@ -6,7 +6,7 @@ data_files_path: ${project_root:}/data/wsi_dnameth
 
 # base_splits_path: /p/project1/hai_spatial_clip/hescape/data
 
-base_output_path: ${project_root:}/../results
+base_output_path: ${project_root:}/results
 
 
 pretrain_weights:

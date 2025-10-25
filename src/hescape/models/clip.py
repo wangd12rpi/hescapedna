@@ -136,6 +136,7 @@ class CLIPModel(nn.Module):
                 img_embed, dnameth_embed, logit_scale=self.logit_scale.exp(), logit_bias=self.logit_bias
             )
         else:
+            # print(img_embed.shape, dnameth_embed.shape)
             contrastive_loss = self.loss(img_embed, dnameth_embed, logit_scale=self.logit_scale.exp())
 
         return contrastive_loss

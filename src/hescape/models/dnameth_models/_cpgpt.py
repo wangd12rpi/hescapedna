@@ -17,6 +17,8 @@ from cpgpt.data.cpgpt_datamodule import CpGPTDataModule
 from cpgpt.trainer.cpgpt_trainer import CpGPTTrainer
 from cpgpt.infer.cpgpt_inferencer import CpGPTInferencer
 
+from hescape.models._cache import EmbeddingCache
+
 
 class CpGPTRunner:
     """
@@ -72,6 +74,9 @@ class CpGPTRunner:
         # device hint only affects how Lightning places the model; no manual .to()
         self.device = device
 
+        # Initialize cache for per-file embeddings
+        self.embedding_cache = EmbeddingCache('cpgpt_embeddings')
+
     @staticmethod
     def _load_vocab_sites(vocab_json: str) -> List[str]:
         """
@@ -92,7 +97,7 @@ class CpGPTRunner:
 
     def encode_beta_files(self, txt_paths: List[str]) -> torch.Tensor:
         """
-        Encode a batch of beta text files into CpGPT embeddings.
+        Encode a batch of beta text files into CpGPT embeddings with per-file caching.
 
         Each file must be a 2-column TSV: CpG_Site, Beta_Value
         Returns:
@@ -100,6 +105,37 @@ class CpGPTRunner:
         """
         assert len(txt_paths) > 0, "encode_beta_files needs at least one path"
 
+        # Check cache for each file individually
+        cached_embeddings = {}
+        uncached_paths = []
+
+        for path in txt_paths:
+            cached = self.embedding_cache.get(path)
+            if cached is not None:
+                cached_embeddings[path] = cached
+            else:
+                uncached_paths.append(path)
+
+        # Compute embeddings for uncached files (batch them for efficiency)
+        if uncached_paths:
+            print(uncached_paths)
+            uncached_embeds = self._compute_embeddings(uncached_paths)
+            # Cache each file individually
+            for path, emb in zip(uncached_paths, uncached_embeds):
+                # Store as [1, D] tensor for consistency
+                emb_single = emb.unsqueeze(0) if emb.dim() == 1 else emb
+                self.embedding_cache.set(path, emb_single)
+                cached_embeddings[path] = emb_single
+
+        # Reconstruct batch in original order
+        result = [cached_embeddings[path].squeeze(0) for path in txt_paths]
+        return torch.stack(result)
+
+    def _compute_embeddings(self, txt_paths: List[str]) -> torch.Tensor:
+        """
+        Internal method to compute embeddings for a batch of files.
+        Extracted from encode_beta_files for caching purposes.
+        """
         # Build a combined table (rows = samples, columns = CpG sites)
         rows = []
         for i, p in enumerate(txt_paths):
