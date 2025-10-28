@@ -66,7 +66,9 @@ class DnaMethEncoder(nn.Module):
                 in_features=input_sites or 0,
                 out_features=embed_dim,
                 model_name=model_name,
+                cache_embeddings=kwargs.get("cache_embeddings", not finetune),
             )
+        self.cache_embeddings = bool(getattr(self.trunk, "cache_embeddings", False))
 
         # CpGPT embeddings dimension resolved from config when available
         self.trunk_dim = getattr(self.trunk, "embedding_dim", 128)
@@ -104,8 +106,8 @@ class DnaMethEncoder(nn.Module):
           features [B, embed_dim]
         """
         # CpGPT embeddings [B, 128] - caching is now handled inside CpGPTRunner
-        with quiet_encoding():
-            emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
+        # with quiet_encoding():
+        emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
         # Project if required
         out = self.head(emb)
         return out

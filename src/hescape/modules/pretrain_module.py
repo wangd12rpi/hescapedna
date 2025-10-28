@@ -49,7 +49,8 @@ class PretrainModule(LightningModule):
         img_enc_name: Literal["ctranspath", "uni", "conch", "optimus", "densenet", "gigapath"],
         gene_enc_name: str,
         loss: Literal["CLIP", "SIGLIP"],
-        img_finetune: bool,
+        tile_finetune: bool,
+        slide_finetune: bool,
         gene_finetune: bool,
         img_proj: Literal["linear", "mlp", "transformer"],
         gene_proj: Literal["identity", "linear", "mlp"],
@@ -68,10 +69,6 @@ class PretrainModule(LightningModule):
 
         local_rank, global_rank, world_size = world_info_from_env()
 
-        logger.info(f"LOCAL RANK: {local_rank}")
-        logger.info(f"GLOBAL RANK: {global_rank}")
-        logger.info(f"WORLD SIZE: {world_size}")
-
         if torch.cuda.is_available():
             logger.info(f"CUDA DEVICE NAME: {torch.cuda.get_device_name(local_rank)}")
             logger.info(f"CUDA DEVICE INDEX: {torch.cuda.current_device()}")
@@ -89,7 +86,8 @@ class PretrainModule(LightningModule):
             embed_dim=embed_dim,
             img_enc_name=img_enc_name,
             loss=loss,
-            img_finetune=img_finetune,
+            tile_finetune=tile_finetune,
+            slide_finetune=slide_finetune,
             dnameth_finetune=gene_finetune,
             dnameth_enc_name=gene_enc_name,
             image_size=image_size,
@@ -127,7 +125,7 @@ class PretrainModule(LightningModule):
             return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
         else:
             return {"optimizer": optimizer}
-            
+
     def _get_moe_aux_loss(self) -> torch.Tensor:
         aux_total = torch.zeros((), device=self.device)
         for enc in [getattr(self.model, "image_encoder", None), getattr(self.model, "dnameth_encoder", None)]:

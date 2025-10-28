@@ -6,8 +6,6 @@ litmodule:
   img_enc_name: gigapath # options: "ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"
   gene_enc_name: cpgpt
   loss: SIGLIP
-  img_finetune: true # true or false
-  gene_finetune: false # CpGPT stays frozen
   img_proj: linear # options: "linear", "mlp", "transformer"
   gene_proj: identity # CpGPT embeddings arrive in final dimension
   n_tissue:

@@ -52,8 +52,9 @@ class CLIPModel(nn.Module):
         img_enc_name: Literal["ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"],
         dnameth_enc_name: str,
         loss: Literal["CLIP", "SIGLIP"],
-        img_finetune: bool = False,
-        dnameth_finetune: bool = False,
+        tile_finetune: bool,
+        slide_finetune: bool,
+        dnameth_finetune: bool,
         n_tissue: int | None = None,
         n_region: int | None = None,
         image_size: int = 224,
@@ -65,15 +66,19 @@ class CLIPModel(nn.Module):
     ):
         super().__init__()
 
-        self.image_encoder = ImageEncoder(
-            model_name=img_enc_name,
-            embed_dim=embed_dim,
-            finetune=img_finetune,
-            checkpoint_path=kwargs.get("img_enc_path", None),
-            proj=kwargs.get("img_proj", "linear"),
-            use_slide_encoder=kwargs.get("use_slide_encoder", True),  # For GigaPath slide-level
-            global_pool=kwargs.get("global_pool", False),
-        )
+        image_encoder_kwargs: dict[str, Any] = {
+            "model_name": img_enc_name,
+            "embed_dim": embed_dim,
+            "finetune_tile": tile_finetune,
+            "finetune_slide": slide_finetune,
+            "proj": kwargs.get("img_proj", "linear"),
+        }
+        if "img_enc_path" in kwargs:
+            image_encoder_kwargs["checkpoint_path"] = kwargs["img_enc_path"]
+        for optional_key in ("global_pool", "use_slide_encoder"):
+            if optional_key in kwargs:
+                image_encoder_kwargs[optional_key] = kwargs[optional_key]
+        self.image_encoder = ImageEncoder(**image_encoder_kwargs)
 
         self.dnameth_enc_name = dnameth_enc_name
         self.dnameth_encoder = DnaMethEncoder(

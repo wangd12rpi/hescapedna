@@ -1,26 +1,23 @@
 # takes all different image encoders in a single class function
 from __future__ import annotations
 
+import logging
+import os
 from collections import OrderedDict
-from pathlib import Path
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from typing import Any, Literal
 
-import timm
 import torch
 import torch.nn as nn
+from gigapath import pipeline
 from peft import LoraConfig, get_peft_model
 from timm.layers import Mlp
 
-from hescape.models._utils import print_trainable_parameters
 from hescape.models._cache import EmbeddingCache
-from hescape.models.image_models._utils import freeze_batch_norm_2d
+from hescape.models._utils import print_trainable_parameters
 from hescape.models.image_models._gigapath import _build_gigapath_model
-from gigapath import pipeline
-import os
+from hescape.models.image_models._utils import freeze_batch_norm_2d
 from .moe import MoE
-from pathlib import Path
-import logging
-from contextlib import contextmanager, redirect_stdout, redirect_stderr
 
 
 
@@ -33,6 +30,24 @@ def quiet_encoding():
             yield
         finally:
             logging.disable(old_disable)
+
+
+class _JointBackbone(nn.Module):
+    """Wrapper to expose tile and slide encoders under the historic attribute names."""
+
+    def __init__(self, tile_encoder: nn.Module, slide_encoder: nn.Module):
+        super().__init__()
+        self.tile_encoder = tile_encoder
+        self.slide_encoder = slide_encoder
+
+
+class _TrunkWrapper(nn.Module):
+    """Compatibility wrapper to preserve checkpoint key structure."""
+
+    def __init__(self, tile_encoder: nn.Module, slide_encoder: nn.Module):
+        super().__init__()
+        self.base_model = nn.Module()
+        self.base_model.model = _JointBackbone(tile_encoder, slide_encoder)
 
 class MoEHeadAdapter(nn.Module):
     def __init__(
@@ -87,73 +102,90 @@ class ImageEncoder(nn.Module):
         super().__init__()
         self.model_name = model_name
 
-        self.trunks, self.total_blocks = self._build_trunks(self.model_name, **kwargs)
+        tile_finetune = kwargs.get("finetune_tile", finetune)
+        slide_finetune = kwargs.get("finetune_slide", finetune)
+        cache_tiles = not tile_finetune
 
-        if not finetune:  # i.e if finetune is false, we freeze the trunk
-            self.freeze()
+        tile_encoder, slide_encoder, self.total_blocks = self._build_trunks(
+            self.model_name,
+        )
 
-        self.trunks = self.get_ft_model(model_name, self.trunks, lora=finetune)
+        if not tile_finetune:
+            self._freeze_module(tile_encoder)
+        if not slide_finetune:
+            self._freeze_module(slide_encoder)
 
+        tile_encoder, slide_encoder = self.get_ft_model(
+            model_name,
+            tile_encoder,
+            slide_encoder,
+            finetune_tile=tile_finetune,
+            finetune_slide=slide_finetune,
+        )
+
+        self.tile_encoder = tile_encoder
+        self.slide_encoder = slide_encoder
+        self.trunk = _TrunkWrapper(self.tile_encoder, self.slide_encoder)
+        self.trunks = (self.tile_encoder, self.slide_encoder)
+        self.finetune_tile = tile_finetune
+        self.finetune_slide = slide_finetune
+        self.use_tile_cache = cache_tiles
         # Build projection head
         self.proj = proj
         self.head = self._build_head(proj, 768, embed_dim)
 
         # Initialize cache for tile embeddings
-        self.tile_cache = EmbeddingCache('tile_embeddings')
+        self.tile_cache = EmbeddingCache('tile_embeddings') if self.use_tile_cache else None
 
         # return hook
 
-    def _build_trunks(self, model_name: str, **kwargs: Any) -> tuple[nn.Module, int]:
+    def _build_trunks(
+        self,
+        model_name: str,
+        **_: Any,
+    ) -> tuple[nn.Module, nn.Module, int]:
         """
         Build the trunk (backbone) model for image encoding.
         Returns (trunk_module, total_blocks).
         """
 
         if model_name == "gigapath":
-            trunks = _build_gigapath_model()
+            tile_encoder, slide_encoder = _build_gigapath_model()
             print(f"Successfully loaded GigaPath slide encoder for {model_name}")
             total_blocks = 12
 
         else:
             raise ValueError(f"Unknown model name: {model_name}")
 
-        return trunks, total_blocks
+        return tile_encoder, slide_encoder, total_blocks
 
-    def get_ft_model(self, model_name: str, trunks, lora: bool = False) -> object:
+    def get_ft_model(
+        self,
+        model_name: str,
+        tile_encoder: nn.Module,
+        slide_encoder: nn.Module,
+        *,
+        finetune_tile: bool,
+        finetune_slide: bool,
+    ) -> tuple[nn.Module, nn.Module]:
         # Define LoRA configurations for each model
-        lora_configs = {
-            "gigapath": {"r": 4, "lora_alpha": 16, "target_modules": ["qkv"]},
-        }
+        lora_configs = {"gigapath": {"r": 4, "lora_alpha": 16, "target_modules": ["proj"]}}
 
-        if lora:
+        if finetune_slide and model_name in lora_configs:
             print("**LoRA Enabled for Slide Encoder**")
-            # Get the LoRA configuration for the given model
-            if model_name in lora_configs.keys():
-                config = lora_configs.get(model_name)
-                if config:
-                    # Create a LoRA configuration object
-                    lora_config = LoraConfig(
-                        r=config["r"],
-                        lora_alpha=config["lora_alpha"],
-                        target_modules=config["target_modules"],
-                        lora_dropout=0.1,
-                        bias="none",
-                    )
+            config = lora_configs[model_name]
+            slide_encoder = get_peft_model(
+                slide_encoder,
+                LoraConfig(
+                    r=config["r"],
+                    lora_alpha=config["lora_alpha"],
+                    target_modules=config["target_modules"],
+                    lora_dropout=0.1,
+                    bias="none",
+                ),
+            )
 
-                    lora_config_slide = LoraConfig(
-                        r=config["r"],
-                        lora_alpha=config["lora_alpha"],
-                        target_modules=["proj"],
-                        lora_dropout=0.1,
-                        bias="none",
-                    )
-                    # Return the fine-tuned model with LoRA
-                    return trunks[0], get_peft_model(trunks[1], lora_config_slide)
-                else:
-                    # Handle unknown model names
-                    raise ValueError(f"Unknown model name: {model_name}")
-
-        return trunks
+        return tile_encoder, slide_encoder
 
     def _build_head(self, proj: str, in_features: int, embed_dim: int) -> nn.Sequential:
         """Build a projection head (Linear or MLP)."""
@@ -184,48 +216,41 @@ class ImageEncoder(nn.Module):
 
         return nn.Sequential(head_layers)
 
-    def freeze(self, freeze_bn_stats=True):
+    def _freeze_module(self, module: nn.Module, freeze_bn_stats: bool = True) -> None:
+        for param in module.parameters():
+            param.requires_grad = False
+        if freeze_bn_stats:
+            freeze_batch_norm_2d(module)
+
+    def freeze(self, freeze_bn_stats: bool = True):
         """Freeze model params."""
-        for x in self.trunks:
-            for param in x.parameters():
-                param.requires_grad = False
-            if freeze_bn_stats:
-                freeze_batch_norm_2d(x)
+        self._freeze_module(self.tile_encoder, freeze_bn_stats=freeze_bn_stats)
+        self._freeze_module(self.slide_encoder, freeze_bn_stats=freeze_bn_stats)
 
     def _load_tile_embeddings_cached(self, slide_dir: str, tile_encoder) -> dict:
         """Load tile embeddings from cache or compute if not cached."""
         def compute_tile_embeddings():
             image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith('.png')]
-            with quiet_encoding():
-                with torch.no_grad():
-                    return pipeline.run_inference_with_tile_encoder(
-                        image_paths, tile_encoder, batch_size=64
-                    )
+            # with quiet_encoding():
+            with torch.no_grad():
+                return pipeline.run_inference_with_tile_encoder(
+                    image_paths, tile_encoder, batch_size=64
+                )
 
+        if self.tile_cache is None:
+            return compute_tile_embeddings()
         return self.tile_cache.get_or_compute(slide_dir, compute_tile_embeddings)
 
     def forward(self, x):
-        """
-        Forward pass.
-
-        Args:
-            x: list of tile paths
-
-        Returns:
-            Embeddings of shape [B, embed_dim]
-        """
-
-        tile_encoder, slide_encoder = self.trunks
-
         embeds = []
 
         if self.proj in ["mlp", "linear", "moe"]:
             for slide_dir in x:
                 # Load tile embeddings from cache or compute
-                tile_encoder_outputs = self._load_tile_embeddings_cached(slide_dir, tile_encoder)
+                tile_encoder_outputs = self._load_tile_embeddings_cached(slide_dir, self.tile_encoder)
 
                 slide_embeds = pipeline.run_inference_with_slide_encoder(
-                    slide_encoder_model=slide_encoder,
+                    slide_encoder_model=self.slide_encoder,
                     **tile_encoder_outputs
                 )
 

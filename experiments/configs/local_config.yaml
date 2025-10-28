@@ -15,11 +15,12 @@ name: hescape_default_training
 model:
   litmodule:
     img_enc_name: gigapath
-    img_finetune: true
+    tile_finetune: false
+    slide_finetune: true
+    gene_finetune: false
     img_proj: linear
     gene_enc_name: cpgpt
-    gene_finetune: false
-    gene_proj: identity
+    gene_proj: linear
     loss: CLIP
     temperature: 0.07
 
@@ -47,5 +48,4 @@ training:
   logger:
     wandb:
       project: hescape_training
-
 

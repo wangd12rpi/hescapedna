@@ -8,9 +8,10 @@
 
 ## Aligning 2 modalities
 
-1. Tiled slide images → Gigapath (with optional LoRA/MoE adapters) → projection head.
+1. Tiled slide images → Gigapath → projection head.
 2. Beta-value TSV → CpGPT runner (filters to vocab, drops NaNs) → optional projection head.
 
+Any encoders including tile encoder, slide encoder, dna encoder might be finetuned using peft or frozen.
 
 Note MoE shouldn't be on the projection both sides as it might impact training, for now only injecting LoRA on image encoder, not on cpgpt.
 

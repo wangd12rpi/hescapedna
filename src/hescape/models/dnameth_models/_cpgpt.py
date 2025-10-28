@@ -35,6 +35,7 @@ class CpGPTRunner:
         model_name: str = "cancer",
         device: str | None = None,
         precision: str = "16-mixed",
+        cache_embeddings: bool = True,
     ) -> None:
         model_name = 'cancer'
         self.root = Path(root).resolve()
@@ -75,7 +76,8 @@ class CpGPTRunner:
         self.device = device
 
         # Initialize cache for per-file embeddings
-        self.embedding_cache = EmbeddingCache('cpgpt_embeddings')
+        self.cache_embeddings = cache_embeddings
+        self.embedding_cache = EmbeddingCache('cpgpt_embeddings') if cache_embeddings else None
 
     @staticmethod
     def _load_vocab_sites(vocab_json: str) -> List[str]:
@@ -105,6 +107,9 @@ class CpGPTRunner:
         """
         assert len(txt_paths) > 0, "encode_beta_files needs at least one path"
 
+        if not self.cache_embeddings or self.embedding_cache is None:
+            return self._compute_embeddings(txt_paths).to(dtype=torch.float32)
+
         # Check cache for each file individually
         cached_embeddings = {}
         uncached_paths = []
@@ -116,13 +121,12 @@ class CpGPTRunner:
             else:
                 uncached_paths.append(path)
 
+        print("dna: find cached:", len(cached_embeddings), "uncached:", len(uncached_paths))
         # Compute embeddings for uncached files (batch them for efficiency)
         if uncached_paths:
-            print(uncached_paths)
             uncached_embeds = self._compute_embeddings(uncached_paths)
             # Cache each file individually
             for path, emb in zip(uncached_paths, uncached_embeds):
-                # Store as [1, D] tensor for consistency
                 emb_single = emb.unsqueeze(0) if emb.dim() == 1 else emb
                 self.embedding_cache.set(path, emb_single)
                 cached_embeddings[path] = emb_single
@@ -198,11 +202,14 @@ def _build_cpgpt_model(
     checkpoint_root: str | Path,
     in_features: int,   # not used here; kept for API parity with encoders
     out_features: int,  # desired head dim in the calling encoder
+    *,
+    model_name: str = "cancer",
+    cache_embeddings: bool = True,
     **kwargs,
 ) -> CpGPTRunner:
     """
     Factory to match hescape's encoder builder pattern.
     Returns a CpGPTRunner instance. Projection heads are handled by the caller.
     """
-    runner = CpGPTRunner(root=str(checkpoint_root), model_name=kwargs.get("model_name", "cancer"))
+    runner = CpGPTRunner(root=str(checkpoint_root), model_name=model_name, cache_embeddings=cache_embeddings)
     return runner
