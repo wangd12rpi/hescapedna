@@ -34,3 +34,8 @@ multirun
 uv.lock
 
 data
+cache
+results
+
+logs
+experiments/hescape_pretrain/logs

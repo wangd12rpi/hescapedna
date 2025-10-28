@@ -1,7 +1,7 @@
 defaults:
   - anatomy: lung_healthy
 
-dataset_path : /home/exouser/Public/modified/human_lung_panel
+#dataset_path : /home/exouser/Public/modified/human_lung_panel
 data_files_path: ${project_root:}/data/wsi_dnameth
 
 # base_splits_path: /p/project1/hai_spatial_clip/hescape/data

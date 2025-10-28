@@ -1,0 +1,74 @@
+# @package _global_
+
+defaults:
+  - _self_
+
+dataset:
+  root_dir: ${project_root:}/data/wsi_dnameth/test
+  index_path: ${dataset.root_dir}/index_tile.jsonl
+  cpgpt_vocab_path: ${project_root:}/data/cpgpt_files/dependencies/model/vocab/cancer.json
+  processed_beta_dir: ${dataset.root_dir}/_processed_beta_eval
+  dropna: true
+
+clip_model:
+  checkpoint_path: ${project_root:}/results/human_lung_healthy_panel/local/checkpoints/last.ckpt
+  model:
+    embed_dim: 128
+    input_sites: 0
+    img_enc_name: gigapath
+    dnameth_enc_name: cpgpt
+    loss: CLIP
+    img_proj: linear
+    dnameth_proj: identity
+    img_finetune: true
+    dnameth_finetune: false
+    image_size: 224
+    temperature: 0.07
+  image_encoder: {}
+  dnameth_encoder:
+    dnameth_enc_path: ${project_root:}/data/cpgpt_files/dependencies
+    cpgpt_checkpoint_path: ${project_root:}/data/cpgpt_files
+  batch_size: 2
+  device: null
+
+embedders:
+  fusion:
+    type: clip_fusion
+    batch_size: 2
+    normalize_output: true
+    fusion:
+      modalities: ["image", "dnameth"]
+      strategy: mean
+  image:
+    type: clip_image
+    batch_size: 2
+    normalize_output: true
+
+tasks:
+  subtyping:
+    type: binary_classification
+    label_field: diagnosis.morphology
+    positive_label: "8520/3"
+    negative_label: "8500/3"
+    folds: 10
+    random_state: 24442
+
+evaluation:
+  jobs:
+    - name: clip_shared_subtyping
+      embedder: fusion
+      task: subtyping
+    - name: gigapath_baseline_subtyping
+      embedder: image
+      task: subtyping
+
+output_dir: ${project_root:}/experiments/evaluation/outputs/${now:%Y%m%d_%H%M%S}
+embedding:
+  dir: ${output_dir}/embeddings
+  force: false
+mode: both
+
+hydra:
+  run:
+    dir: ${output_dir}/hydra
+  output_subdir: null
