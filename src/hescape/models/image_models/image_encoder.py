@@ -169,7 +169,7 @@ class ImageEncoder(nn.Module):
         finetune_slide: bool,
     ) -> tuple[nn.Module, nn.Module]:
         # Define LoRA configurations for each model
-        lora_configs = {"gigapath": {"r": 4, "lora_alpha": 16, "target_modules": ["proj"]}}
+        lora_configs = {"gigapath": {"r": 16, "lora_alpha": 16, "target_modules": ["proj"]}}
 
         if finetune_slide and model_name in lora_configs:
             print("**LoRA Enabled for Slide Encoder**")

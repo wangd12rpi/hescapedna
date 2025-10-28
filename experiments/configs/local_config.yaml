@@ -26,7 +26,7 @@ model:
 
 datamodule:
   seed: 24442
-  batch_size: 32
+  batch_size: 16
   num_workers: 4
   pin_memory: true
   persistent_workers: true
@@ -36,7 +36,7 @@ datamodule:
 training:
   lightning:
     trainer:
-      max_epochs: 100
+      max_epochs: 80
       devices: 1
       num_nodes: 1
       strategy: auto
