@@ -5,9 +5,11 @@ cache:
 output:
   dir: ${project_root:}/experiments/evaluation/outputs/${now:%Y%m%d_%H%M%S}
 
-# Choose embedders and splits to evaluate
+# Embedders to evaluate (names must match folders created by the embed stage)
 embedders: ["clip_gigapath", "clip_cpgpt", "gigapath_base", "cpgpt_base"]
-splits: ["test"]
+
+# We require an explicit train/test protocol
+splits: ["train", "test"]
 
 dataset:
   cpgpt_vocab_path: ${project_root:}/data/cpgpt_files/dependencies/model/vocab/cancer.json
@@ -20,26 +22,24 @@ dataset:
     root_dir: ${project_root:}/data/wsi_dnameth/test
     index_path: ${dataset.test.root_dir}/index_tile.jsonl
 
-# Global classifier defaults (simple NN)
+# Classifier settings (read exactly from YAML; no hidden defaults in code)
 classifier:
+  type: "nn"         # "nn" | "logreg"
+  device: "cuda"     # "cuda" | "cpu"
+  hidden_dim: 256    # only used for type="nn"
   epochs: 50
   batch_size: 64
   lr: 3e-4
   weight_decay: 0.0
 
-# Example tasks; add more matching your JSONL ground-truth fields
+# Tasks (binary) — labels must be present in your JSONL
 tasks:
   brca_subtyping:
     label_field: diagnosis.morphology
     positive_label: "8520/3"   # IDC-L
     negative_label: "8500/3"   # IDC-NOS
-    folds: 10
-    random_state: 24442
 
-  # Example of a mutation task if your JSONL includes boolean flags under metadata.mutations
   tp53_mutation:
     label_field: metadata.mutations.TP53
     positive_label: "True"
     negative_label: "False"
-    folds: 5
-    random_state: 1337
