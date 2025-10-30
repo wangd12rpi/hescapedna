@@ -195,3 +195,28 @@ class ClipImageEmbeddingExtractor:
                     results[sample.sample_id] = vector.detach().cpu().numpy()
 
         return results
+
+
+class ClipDnaEmbeddingExtractor:
+    """Extract only the DNA methylation branch embeddings (CpGPT baseline)."""
+
+    def __init__(self, config: ClipModelConfig):
+        self.bundle = _ClipModelBundle(config)
+        self.normalize_output: bool = config.normalize_output
+        self.batch_size: int = max(1, config.batch_size)
+
+    def embed(self, samples: Sequence[EvaluationSample]) -> Dict[str, np.ndarray]:
+        model = self.bundle.model()
+        results: Dict[str, np.ndarray] = {}
+
+        with torch.no_grad():
+            for start in range(0, len(samples), self.batch_size):
+                batch_samples = samples[start : start + self.batch_size]
+                batch_beta = [sample.dnameth_path for sample in batch_samples]
+                dnameth_embed = model.dnameth_encoder(batch_beta)
+                if self.normalize_output:
+                    dnameth_embed = F.normalize(dnameth_embed, p=2, dim=-1)
+                for sample, vector in zip(batch_samples, dnameth_embed, strict=True):
+                    results[sample.sample_id] = vector.detach().cpu().numpy()
+
+        return results

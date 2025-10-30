@@ -33,7 +33,7 @@ outputs
 multirun
 uv.lock
 
-data
+data/wsi_dnameth
 cache
 results
 

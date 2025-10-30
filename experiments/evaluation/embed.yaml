@@ -1,0 +1,60 @@
+# Embedding stage config
+
+dataset:
+  splits:
+    - name: train
+      root_dir: ${project_root:}/data/wsi_dnameth/train
+      index_path: ${dataset.splits.0.root_dir}/index_tile.jsonl
+      cpgpt_vocab_path: ${project_root:}/data/cpgpt_files/dependencies/model/vocab/cancer.json
+      processed_beta_dir: ${dataset.splits.0.root_dir}/_processed_beta_eval
+      dropna: true
+    - name: test
+      root_dir: ${project_root:}/data/wsi_dnameth/test
+      index_path: ${dataset.splits.1.root_dir}/index_tile.jsonl
+      cpgpt_vocab_path: ${project_root:}/data/cpgpt_files/dependencies/model/vocab/cancer.json
+      processed_beta_dir: ${dataset.splits.1.root_dir}/_processed_beta_eval
+      dropna: true
+
+clip_model:
+  checkpoint_path: ${project_root:}/results/human_lung_healthy_panel/local/checkpoints/last.ckpt
+  model:
+    embed_dim: 128
+    input_sites: 0
+    img_enc_name: gigapath
+    dnameth_enc_name: cpgpt
+    loss: CLIP
+    img_proj: linear
+    dnameth_proj: identity
+    img_finetune: true
+    dnameth_finetune: false
+    image_size: 224
+    temperature: 0.07
+  image_encoder: {}
+  dnameth_encoder:
+    dnameth_enc_path: ${project_root:}/data/cpgpt_files/dependencies
+    cpgpt_checkpoint_path: ${project_root:}/data/cpgpt_files
+  batch_size: 2
+  device: null
+
+embedders:
+  align:
+    enable: true
+    fusion:
+      modalities: ["image", "dnameth"]
+      strategy: mean
+    normalize_output: true
+  gigapath:
+    enable: true
+    normalize_output: true
+  cpgpt:
+    enable: true
+    normalize_output: true
+
+cache:
+  dir: ${project_root:}/experiments/evaluation/cache
+  force: false
+
+hydra:
+  run:
+    dir: ${project_root:}/experiments/evaluation/outputs/${now:%Y%m%d_%H%M%S}/hydra
+  output_subdir: null
