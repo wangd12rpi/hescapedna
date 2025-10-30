@@ -48,15 +48,10 @@ def _instantiate_embedder(
     clip_base_cfg: DictConfig,
 ) -> ClipFusionEmbeddingExtractor | ClipImageEmbeddingExtractor:
     embedder_type = embedder_cfg.get("type")
-    base_model = _to_plain(clip_base_cfg.model)
-    image_encoder = _to_plain(clip_base_cfg.image_encoder)
-    dnameth_encoder = _to_plain(clip_base_cfg.dnameth_encoder)
 
     clip_config = ClipModelConfig(
         checkpoint_path=Path(clip_base_cfg.checkpoint_path),
-        model=base_model,
-        image_encoder=image_encoder,
-        dnameth_encoder=dnameth_encoder,
+        hparams_path=Path(clip_base_cfg.hparams_path),
         fusion=_to_plain(embedder_cfg.get("fusion")) if embedder_type == "clip_fusion" else None,
         device=embedder_cfg.get("device", clip_base_cfg.get("device")),
         batch_size=embedder_cfg.get("batch_size", clip_base_cfg.get("batch_size", 4)),

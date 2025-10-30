@@ -106,6 +106,7 @@ def main() -> None:
     clip_section = cfg["clip"]
     clip_cfg = ClipModelConfig(
         checkpoint_path=Path(clip_section["checkpoint_path"]),
+        hparams_path=Path(clip_section["hparams_path"]),
         device=clip_section.get("device"),
         batch_size=int(clip_section.get("batch_size", 8)),
         normalize_output=bool(clip_section.get("normalize_output", True)),

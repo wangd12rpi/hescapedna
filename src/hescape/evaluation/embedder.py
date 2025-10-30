@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Sequence
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from omegaconf import OmegaConf
 
 from hescape.constants import DatasetEnum
 from hescape.evaluation.data import EvaluationSample
@@ -27,7 +28,7 @@ def _default_device(explicit: str | None = None) -> torch.device:
 def _extract_model_state(ckpt: Mapping[str, Any]) -> Mapping[str, torch.Tensor]:
     """Collect the actual model weights from a Lightning checkpoint."""
     if "state_dict" not in ckpt:
-        return ckpt
+        return ckpt  # raw state_dict
     state_dict: Mapping[str, torch.Tensor] = ckpt["state_dict"]
     filtered: Dict[str, torch.Tensor] = {}
     for key, value in state_dict.items():
@@ -38,64 +39,58 @@ def _extract_model_state(ckpt: Mapping[str, Any]) -> Mapping[str, torch.Tensor]:
     return filtered
 
 
-def _first_non_none(*vals):
-    for v in vals:
-        if v is not None:
-            return v
-    return None
-
-
-def _infer_arch_from_checkpoint(ckpt: Mapping[str, Any]) -> Dict[str, Any]:
+def _load_arch_from_hparams(path: Path) -> Dict[str, Any]:
     """
-    Infer CLIP model constructor kwargs from Lightning checkpoint hyperparameters.
-    We search typical locations ('hyper_parameters', 'hparams', plus nested dicts).
-    Missing keys fall back to safe defaults consistent with training code.
+    Load all model hyperparameters from a Lightning CSVLogger hparams.yaml.
+
+    This is strict: we index mandatory keys directly so a KeyError is raised if anything is missing.
     """
-    hp = ckpt.get("hyper_parameters") or ckpt.get("hparams") or {}
+    if not path.exists():
+        raise FileNotFoundError(f"hparams.yaml not found: {path}")
 
-    # Gather candidate dicts to scan
-    cands: List[Mapping[str, Any]] = []
-    if isinstance(hp, Mapping):
-        cands.append(hp)
-        for k in ("model", "clip", "clip_model", "cfg", "net"):
-            v = hp.get(k)
-            if isinstance(v, Mapping):
-                cands.append(v)
-            if k == "cfg" and isinstance(v, Mapping) and isinstance(v.get("model"), Mapping):
-                cands.append(v["model"])  # cfg.model
+    hp = OmegaConf.load(str(path))
+    hp = OmegaConf.to_container(hp, resolve=True)  # -> plain dict
 
-    def pick(*keys, default=None):
-        for d in cands:
-            for k in keys:
-                if k in d:
-                    return d[k]
-        return default
+    # Required sections
+    lit = hp["model"]["litmodule"]  # raises KeyError if missing
+    pretrain = hp["paths"]["pretrain_weights"]  # raises KeyError if missing
 
-    # Reasonable defaults if not present (will be overwritten by checkpoint weights anyway)
+    # Map training-time names -> CLIPModel constructor kwargs
     arch = {
-        "input_sites": int(pick("input_sites", "input_genes", default=0) or 0),
-        "embed_dim": int(pick("embed_dim", default=128) or 128),
-        "img_enc_name": str(pick("img_enc_name", default="gigapath") or "gigapath"),
-        "dnameth_enc_name": str(pick("dnameth_enc_name", "gene_enc_name", default="cpgpt") or "cpgpt"),
-        "loss": str(pick("loss", default="CLIP") or "CLIP"),
-        "img_finetune": bool(pick("img_finetune", default=False) or False),
-        "dnameth_finetune": bool(pick("dnameth_finetune", "gene_finetune", default=False) or False),
-        "n_tissue": pick("n_tissue", default=None),
-        "n_region": pick("n_region", default=None),
-        "image_size": int(pick("image_size", default=224) or 224),
-        "temperature": float(pick("temperature", default=0.07) or 0.07),
-        "world_size": int(pick("world_size", default=1) or 1),
-        "rank": int(pick("rank", default=0) or 0),
-        "img_proj": str(pick("img_proj", "image_proj", default="linear") or "linear"),
-        "dnameth_proj": str(pick("dnameth_proj", "gene_proj", default="identity") or "identity"),
+        # encoder names and dims
+        "input_sites": int(lit["input_genes"]),
+        "embed_dim": int(lit["embed_dim"]),
+        "img_enc_name": str(lit["img_enc_name"]),
+        "dnameth_enc_name": str(lit["gene_enc_name"]),
+        "loss": str(lit["loss"]),
+
+        # projections
+        "img_proj": str(lit["img_proj"]),
+        "dnameth_proj": str(lit["gene_proj"]),
+
+        # finetuning switches
+        "tile_finetune": bool(lit["tile_finetune"]),
+        "slide_finetune": bool(lit["slide_finetune"]),
+        "dnameth_finetune": bool(lit["gene_finetune"]),
+
+        # optional-but-present in your YAML (allowed to be None)
+        "n_tissue": lit.get("n_tissue", None),
+        "n_region": lit.get("n_region", None),
+        "image_size": int(lit["image_size"]),
+        "temperature": float(lit["temperature"]),
+
+        # encoder resource roots used at train time
+        "img_enc_path": str(pretrain["img_enc_path"]),
+        "dnameth_enc_path": str(pretrain["gene_enc_path"]),
     }
     return arch
 
 
 @dataclass(slots=True)
 class ClipModelConfig:
-    """Minimal config to materialise a CLIPModel from checkpoint only."""
+    """Minimal config to materialise a CLIPModel strictly from YAML + weights."""
     checkpoint_path: Path
+    hparams_path: Path
     device: str | None = None
     batch_size: int = 4
     normalize_output: bool = True
@@ -121,29 +116,32 @@ class _ClipModelBundle:
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-        # Load checkpoint and infer architecture
-        raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-        arch = _infer_arch_from_checkpoint(raw)
+        # 1) Strictly parse architecture from user-specified hparams.yaml
+        arch = _load_arch_from_hparams(self.cfg.hparams_path)
 
+        # 2) Instantiate model with exactly those parameters (no assumptions)
         clip_model = CLIPModel(
-            input_sites=int(arch.get("input_sites", 0)),
-            embed_dim=int(arch["embed_dim"]),
-            img_enc_name=arch.get("img_enc_name", "gigapath"),
-            dnameth_enc_name=arch.get("dnameth_enc_name", "cpgpt"),
-            loss=arch.get("loss", "CLIP"),
-            img_finetune=bool(arch.get("img_finetune", False)),
-            dnameth_finetune=bool(arch.get("dnameth_finetune", False)),
-            n_tissue=arch.get("n_tissue"),
-            n_region=arch.get("n_region"),
-            image_size=int(arch.get("image_size", 224)),
-            temperature=float(arch.get("temperature", 0.07)),
-            world_size=int(arch.get("world_size", 1)),
-            rank=int(arch.get("rank", 0)),
-            img_proj=arch.get("img_proj", "linear"),
-            dnameth_proj=arch.get("dnameth_proj", "identity"),
+            input_sites=arch["input_sites"],
+            embed_dim=arch["embed_dim"],
+            img_enc_name=arch["img_enc_name"],
+            dnameth_enc_name=arch["dnameth_enc_name"],
+            loss=arch["loss"],
+            tile_finetune=arch["tile_finetune"],
+            slide_finetune=arch["slide_finetune"],
+            dnameth_finetune=arch["dnameth_finetune"],
+            n_tissue=arch["n_tissue"],
+            n_region=arch["n_region"],
+            image_size=arch["image_size"],
+            temperature=arch["temperature"],
+            img_proj=arch["img_proj"],
+            dnameth_proj=arch["dnameth_proj"],
+            img_enc_path=arch["img_enc_path"],
+            dnameth_enc_path=arch["dnameth_enc_path"],
         )
 
-        state_dict = _extract_model_state(raw)
+        # 3) Load weights
+        state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        state_dict = _extract_model_state(state)
         incompatible = clip_model.load_state_dict(state_dict, strict=False)
         if incompatible.missing_keys:
             logger.warning("Missing keys when loading %s: %s", ckpt_path, sorted(incompatible.missing_keys))
