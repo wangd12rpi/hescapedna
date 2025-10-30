@@ -7,6 +7,7 @@ from typing import Dict, List, Mapping
 import numpy as np
 import torch
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 from hescape._utils import find_root
 from hescape.evaluation import (
@@ -40,7 +41,7 @@ def _ensure_dir(p: Path) -> None:
 def _save_per_sample(folder: Path, mapping: Mapping[str, np.ndarray]) -> None:
     _ensure_dir(folder)
     manifest: List[dict] = []
-    for sid, vec in mapping.items():
+    for sid, vec in tqdm(mapping.items()):
         out = folder / f"{sid}.pt"
         torch.save(torch.as_tensor(vec, dtype=torch.float32), out)
         manifest.append({"sample_id": sid, "path": str(out)})
