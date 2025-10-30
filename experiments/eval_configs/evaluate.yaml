@@ -31,7 +31,12 @@ classifier:
   lr: 3e-4
   weight_decay: 0.0
 
-# Tasks (binary) — labels must be present in your JSONL
+# Default metrics (can be overridden per task with a `metrics:` list)
+metrics:
+  classification: ["auroc_macro", "auprc_macro", "accuracy", "f1_macro"]
+  survival: ["c_index"]
+
+# Tasks (binary by default) — labels must be present in your JSONL
 tasks:
   brca_subtyping:
     label_field: diagnosis.morphology
