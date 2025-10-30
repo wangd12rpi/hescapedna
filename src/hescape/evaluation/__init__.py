@@ -5,7 +5,11 @@ from hescape.evaluation.embedder import (
     ClipDnaEmbeddingExtractor,
     ClipModelConfig,
 )
-from hescape.evaluation.tasks import BinaryClassificationTask, CrossValidationResult, FoldResult
+from hescape.evaluation.tasks import (
+    BinaryClassificationTask,
+    CrossValidationResult,
+    FoldResult,
+)
 
 __all__ = [
     "BinaryClassificationTask",

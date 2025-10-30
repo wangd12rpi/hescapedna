@@ -1,157 +1,234 @@
 from __future__ import annotations
 
 import json
-import logging
-from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Mapping, Sequence
+from typing import Dict, Iterable, List, Mapping, Tuple
 
-import hydra
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+import torch
+from omegaconf import OmegaConf
+from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.model_selection import StratifiedKFold
 
 from hescape._utils import find_root
-from hescape.evaluation import (
-    BinaryClassificationTask,
-    CrossValidationResult,
-    SampleIndex,
-    load_samples,
-)
-
-logger = logging.getLogger(__name__)
-OmegaConf.register_new_resolver("project_root", lambda: find_root())
+from hescape.evaluation import SampleIndex, load_samples
 
 
-@dataclass(slots=True)
-class JobSpec:
-    name: str
-    task: str
-    embedder: str
-    split: str
-    sample_ids: List[str]
-    labels: Mapping[str, str | None]
+def _project_root() -> Path:
+    return Path(find_root()).resolve()
 
 
-def _load_npz(path: Path) -> Dict[str, np.ndarray]:
-    obj = np.load(str(path), allow_pickle=False)
-    sample_ids: Sequence[str] = list(obj["sample_ids"])
-    matrix = np.asarray(obj["embeddings"])
-    return {sid: matrix[i] for i, sid in enumerate(sample_ids)}
+def _load_cfg() -> dict:
+    OmegaConf.register_new_resolver("project_root", lambda: str(_project_root()))
+    cfg_path = _project_root() / "experiments" / "configuration" / "evaluate.yaml"
+    cfg = OmegaConf.load(cfg_path)
+    return OmegaConf.to_container(cfg, resolve=True)  # type: ignore[return-value]
 
 
-def _save_results(path: Path, payload: Mapping[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(payload, handle, indent=2)
+def _ensure_dir(p: Path) -> None:
+    p.mkdir(parents=True, exist_ok=True)
 
 
-@hydra.main(config_path=".", config_name="evaluate", version_base="1.2")
-def main(cfg: DictConfig) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+def _read_manifest(folder: Path) -> Dict[str, Path]:
+    manifest = folder / "manifest.jsonl"
+    mapping: Dict[str, Path] = {}
+    if not manifest.exists():
+        return mapping
+    with manifest.open("r", encoding="utf-8") as f:
+        for line in f:
+            row = json.loads(line)
+            mapping[str(row["sample_id"])] = Path(row["path"])
+    return mapping
 
-    # Build task objects
-    task_cfgs: Dict[str, DictConfig] = dict(cfg.tasks)
-    tasks = {
-        name: BinaryClassificationTask(
-            name=name,
-            label_field=task_cfgs[name].label_field,
-            positive_label=str(task_cfgs[name].positive_label),
-            negative_label=str(task_cfgs[name].negative_label),
-            folds=int(task_cfgs[name].get("folds", 10)),
-            random_state=int(task_cfgs[name].get("random_state", 42)),
-            stratified=task_cfgs[name].get("stratified", True),
-            max_iter=int(task_cfgs[name].get("max_iter", 1000)),
-            clf=dict(cfg.evaluation.get("classifier", {"name": "nn"})),
-        )
-        for name in task_cfgs
-    }
 
-    # Load datasets per split for labels
-    datasets: Dict[str, SampleIndex] = {}
-    for split in cfg.dataset.splits:
-        name = split.get("name")
-        ds = load_samples(
-            index_path=split.index_path,
-            root_dir=split.root_dir,
-            cpgpt_vocab_path=split.get("cpgpt_vocab_path"),
-            processed_beta_dir=split.get("processed_beta_dir"),
-            dropna=split.get("dropna", True),
-        )
-        datasets[name] = ds
-
-    # Construct jobs
-    jobs: List[JobSpec] = []
-    for job_cfg in cfg.evaluation.jobs:
-        task_name = job_cfg.task
-        embedder = job_cfg.embedder
-        split = job_cfg.get("split", cfg.dataset.get("default_split", "test"))
-        job_name = job_cfg.name
-        task = tasks[task_name]
-
-        labels = datasets[split].labels(task.label_field)
-        sample_ids = [sid for sid, val in labels.items() if val is not None]
-        if not sample_ids:
-            logger.warning("Skipping job '%s': no labels for task '%s' in split '%s'", job_name, task_name, split)
+def _load_vectors_for_samples(sample_ids: List[str], manifest: Mapping[str, Path]) -> Dict[str, np.ndarray]:
+    result: Dict[str, np.ndarray] = {}
+    for sid in sample_ids:
+        p = manifest.get(sid)
+        if p is None or not Path(p).exists():
             continue
+        vec = torch.load(p, map_location="cpu")
+        if isinstance(vec, torch.Tensor):
+            vec = vec.detach().cpu().numpy()
+        else:
+            vec = np.asarray(vec)
+        result[sid] = vec
+    return result
 
-        jobs.append(JobSpec(name=job_name, task=task_name, embedder=embedder, split=split, sample_ids=sample_ids, labels=labels))
 
-    if not jobs:
-        logger.warning("No evaluation jobs scheduled; exiting.")
-        return
+class SimpleMLP(torch.nn.Module):
+    def __init__(self, in_dim: int, hidden: int = 256):
+        super().__init__()
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(in_dim, hidden),
+            torch.nn.ReLU(inplace=True),
+            torch.nn.Linear(hidden, 1),
+        )
 
-    # Load embedding caches on demand
-    cache_root = Path(cfg.cache.dir).resolve()
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(-1)
+
+
+def _train_eval_nn(
+    x: np.ndarray,
+    y: np.ndarray,
+    *,
+    folds: int,
+    epochs: int,
+    batch_size: int,
+    lr: float,
+    weight_decay: float,
+    random_state: int,
+) -> Tuple[List[float], List[float]]:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=random_state)
+    aurocs: List[float] = []
+    auprcs: List[float] = []
+
+    for train_idx, test_idx in skf.split(x, y):
+        x_train = torch.from_numpy(x[train_idx]).float().to(device)
+        y_train = torch.from_numpy(y[train_idx]).float().to(device)
+        x_test = torch.from_numpy(x[test_idx]).float().to(device)
+        y_test = torch.from_numpy(y[test_idx]).float().to(device)
+
+        model = SimpleMLP(in_dim=x.shape[1], hidden=256).to(device)
+        opt = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+        loss_fn = torch.nn.BCEWithLogitsLoss()
+
+        ds = torch.utils.data.TensorDataset(x_train, y_train)
+        dl = torch.utils.data.DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last=False)
+
+        model.train()
+        for _ in range(epochs):
+            for xb, yb in dl:
+                logits = model(xb)
+                loss = loss_fn(logits, yb)
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+                opt.step()
+
+        model.eval()
+        with torch.no_grad():
+            logits = model(x_test).detach().cpu().numpy()
+        probs = 1.0 / (1.0 + np.exp(-logits))
+        aurocs.append(float(roc_auc_score(y_test.cpu().numpy(), probs)))
+        auprcs.append(float(average_precision_score(y_test.cpu().numpy(), probs)))
+
+    return aurocs, auprcs
+
+
+def _collect_labels(dataset: SampleIndex, label_field: str, positive: str, negative: str) -> Tuple[List[str], np.ndarray]:
+    labels = dataset.labels(label_field)
+    sample_ids: List[str] = []
+    targets: List[int] = []
+    wanted = {positive, negative}
+    for sid, label in labels.items():
+        if label in wanted:
+            sample_ids.append(sid)
+            targets.append(1 if label == positive else 0)
+    return sample_ids, np.array(targets, dtype=np.int64)
+
+
+def main() -> None:
+    cfg = _load_cfg()
+
+    cache_dir = Path(cfg["cache"]["dir"]).resolve()
+    out_dir = Path(cfg["output"]["dir"]).resolve()
+    _ensure_dir(out_dir)
+
+    # Which embedders and splits to evaluate
+    embedders: List[str] = list(cfg.get("embedders", ["align", "gigapath", "cpgpt"]))
+    splits: List[str] = list(cfg.get("splits", ["test"]))
+
+    ds_cfg = cfg["dataset"]
+    vocab = ds_cfg.get("cpgpt_vocab_path")
+    proc_beta = ds_cfg.get("processed_beta_dir")
+    dropna = bool(ds_cfg.get("dropna", True))
+
     results: List[dict] = []
-    memo: Dict[tuple, Dict[str, np.ndarray]] = {}
 
-    for job in jobs:
-        cache_key = (job.split, job.embedder)
-        if cache_key not in memo:
-            npz_path = cache_root / job.split / job.embedder / "data.npz"
-            if not npz_path.exists():
-                raise FileNotFoundError(f"Missing cache for split='{job.split}' embedder='{job.embedder}' at {npz_path}")
-            memo[cache_key] = _load_npz(npz_path)
-
-        embed_map = memo[cache_key]
-        missing = [sid for sid in job.sample_ids if sid not in embed_map]
-        if missing:
-            logger.info("Job '%s': %d samples missing in cache, they will be ignored", job.name, len(missing))
-
-        X = {sid: embed_map[sid] for sid in job.sample_ids if sid in embed_map}
-        y = {sid: job.labels[sid] for sid in job.sample_ids if sid in embed_map}
-
-        task = tasks[job.task]
-        cv_result: CrossValidationResult = task.run(embedder_name=job.embedder, embeddings=X, labels=y)
-
-        results.append(
-            {
-                "job": job.name,
-                "task": job.task,
-                "embedder": job.embedder,
-                "split": job.split,
-                "samples": len(X),
-                "summary": cv_result.summary,
-                "folds": [asdict(fold) for fold in cv_result.folds],
-            }
+    for split in splits:
+        # Load dataset to obtain labels from JSONL
+        if split not in ds_cfg:
+            continue
+        sc = ds_cfg[split]
+        dataset = load_samples(
+            index_path=sc["index_path"],
+            root_dir=sc["root_dir"],
+            cpgpt_vocab_path=vocab,
+            processed_beta_dir=proc_beta,
+            dropna=dropna,
         )
 
-        summ = cv_result.summary
-        logger.info(
-            "[%s | %s | %s] AUROC=%.4f±%.4f AUPRC=%.4f±%.4f (n=%d)",
-            job.name,
-            job.task,
-            job.embedder,
-            summ["auroc_mean"],
-            summ["auroc_std"],
-            summ["auprc_mean"],
-            summ["auprc_std"],
-            len(X),
-        )
+        # Preload manifests for all embedders in this split
+        man_by_embedder: Dict[str, Dict[str, Path]] = {}
+        for e in embedders:
+            folder = cache_dir / split / e
+            man_by_embedder[e] = _read_manifest(folder)
 
-    out_dir = Path(cfg.output.dir).resolve()
-    _save_results(out_dir / "results.json", {"results": results})
-    logger.info("Wrote evaluation results to %s", out_dir / "results.json")
+        # Tasks loop
+        for task_name, task_cfg in cfg["tasks"].items():
+            label_field = task_cfg["label_field"]
+            positive = str(task_cfg["positive_label"])
+            negative = str(task_cfg["negative_label"])
+            folds = int(task_cfg.get("folds", 10))
+            random_state = int(task_cfg.get("random_state", 42))
+
+            # classifier params
+            clf = cfg.get("classifier", {})
+            epochs = int(clf.get("epochs", 50))
+            batch_size = int(clf.get("batch_size", 64))
+            lr = float(clf.get("lr", 3e-4))
+            weight_decay = float(clf.get("weight_decay", 0.0))
+
+            sample_ids, y = _collect_labels(dataset, label_field, positive, negative)
+            if not sample_ids:
+                continue
+
+            for e in embedders:
+                manifest = man_by_embedder.get(e, {})
+                vecs_map = _load_vectors_for_samples(sample_ids, manifest)
+                if not vecs_map:
+                    continue
+                # Align vectors to the sample_id order
+                x = np.stack([vecs_map[sid] for sid in sample_ids if sid in vecs_map])
+                y_eff = np.array([y[i] for i, sid in enumerate(sample_ids) if sid in vecs_map], dtype=np.int64)
+                if x.shape[0] < 2 or x.ndim != 2:
+                    continue
+
+                aurocs, auprcs = _train_eval_nn(
+                    x, y_eff,
+                    folds=folds,
+                    epochs=epochs,
+                    batch_size=batch_size,
+                    lr=lr,
+                    weight_decay=weight_decay,
+                    random_state=random_state,
+                )
+
+                results.append({
+                    "split": split,
+                    "embedder": e,
+                    "task": task_name,
+                    "samples": int(x.shape[0]),
+                    "summary": {
+                        "auroc_mean": float(np.mean(aurocs)),
+                        "auroc_std": float(np.std(aurocs, ddof=1)) if len(aurocs) > 1 else 0.0,
+                        "auprc_mean": float(np.mean(auprcs)),
+                        "auprc_std": float(np.std(auprcs, ddof=1)) if len(auprcs) > 1 else 0.0,
+                    },
+                    "folds": [
+                        {"fold": i + 1, "auroc": float(aurocs[i]), "auprc": float(auprcs[i])}
+                        for i in range(len(aurocs))
+                    ],
+                })
+
+    # Write results
+    with (out_dir / "results.json").open("w", encoding="utf-8") as f:
+        json.dump({"results": results}, f, indent=2)
+
+    print(f"Evaluation results written to {out_dir / 'results.json'}")
 
 
 if __name__ == "__main__":

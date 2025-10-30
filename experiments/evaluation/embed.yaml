@@ -18,8 +18,8 @@ dataset:
 clip_model:
   checkpoint_path: ${project_root:}/results/human_lung_healthy_panel/local/checkpoints/last.ckpt
   model:
-    embed_dim: 128
-    input_sites: 0
+#    embed_dim: 128
+#    input_sites: 0
     img_enc_name: gigapath
     dnameth_enc_name: cpgpt
     loss: CLIP

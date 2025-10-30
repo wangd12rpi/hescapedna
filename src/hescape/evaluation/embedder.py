@@ -38,18 +38,69 @@ def _extract_model_state(ckpt: Mapping[str, Any]) -> Mapping[str, torch.Tensor]:
     return filtered
 
 
+def _first_non_none(*vals):
+    for v in vals:
+        if v is not None:
+            return v
+    return None
+
+
+def _infer_arch_from_checkpoint(ckpt: Mapping[str, Any]) -> Dict[str, Any]:
+    """
+    Infer CLIP model constructor kwargs from Lightning checkpoint hyperparameters.
+    We search typical locations ('hyper_parameters', 'hparams', plus nested dicts).
+    Missing keys fall back to safe defaults consistent with training code.
+    """
+    hp = ckpt.get("hyper_parameters") or ckpt.get("hparams") or {}
+
+    # Gather candidate dicts to scan
+    cands: List[Mapping[str, Any]] = []
+    if isinstance(hp, Mapping):
+        cands.append(hp)
+        for k in ("model", "clip", "clip_model", "cfg", "net"):
+            v = hp.get(k)
+            if isinstance(v, Mapping):
+                cands.append(v)
+            if k == "cfg" and isinstance(v, Mapping) and isinstance(v.get("model"), Mapping):
+                cands.append(v["model"])  # cfg.model
+
+    def pick(*keys, default=None):
+        for d in cands:
+            for k in keys:
+                if k in d:
+                    return d[k]
+        return default
+
+    # Reasonable defaults if not present (will be overwritten by checkpoint weights anyway)
+    arch = {
+        "input_sites": int(pick("input_sites", "input_genes", default=0) or 0),
+        "embed_dim": int(pick("embed_dim", default=128) or 128),
+        "img_enc_name": str(pick("img_enc_name", default="gigapath") or "gigapath"),
+        "dnameth_enc_name": str(pick("dnameth_enc_name", "gene_enc_name", default="cpgpt") or "cpgpt"),
+        "loss": str(pick("loss", default="CLIP") or "CLIP"),
+        "img_finetune": bool(pick("img_finetune", default=False) or False),
+        "dnameth_finetune": bool(pick("dnameth_finetune", "gene_finetune", default=False) or False),
+        "n_tissue": pick("n_tissue", default=None),
+        "n_region": pick("n_region", default=None),
+        "image_size": int(pick("image_size", default=224) or 224),
+        "temperature": float(pick("temperature", default=0.07) or 0.07),
+        "world_size": int(pick("world_size", default=1) or 1),
+        "rank": int(pick("rank", default=0) or 0),
+        "img_proj": str(pick("img_proj", "image_proj", default="linear") or "linear"),
+        "dnameth_proj": str(pick("dnameth_proj", "gene_proj", default="identity") or "identity"),
+    }
+    return arch
+
+
 @dataclass(slots=True)
 class ClipModelConfig:
-    """Configuration required to materialise a CLIPModel from checkpoints."""
-
+    """Minimal config to materialise a CLIPModel from checkpoint only."""
     checkpoint_path: Path
-    model: Mapping[str, Any]
-    image_encoder: Mapping[str, Any]
-    dnameth_encoder: Mapping[str, Any]
-    fusion: Mapping[str, Any] | None = None
     device: str | None = None
     batch_size: int = 4
     normalize_output: bool = True
+    # Optional fusion controls for ClipFusionEmbeddingExtractor
+    fusion: Mapping[str, Any] | None = None
 
 
 class _ClipModelBundle:
@@ -70,42 +121,34 @@ class _ClipModelBundle:
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-        model_cfg = dict(self.cfg.model)
-        img_cfg = dict(self.cfg.image_encoder)
-        dna_cfg = dict(self.cfg.dnameth_encoder)
-
-        clip_kwargs: Dict[str, Any] = {}
-        clip_kwargs.update(img_cfg)
-        clip_kwargs.update(dna_cfg)
+        # Load checkpoint and infer architecture
+        raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+        arch = _infer_arch_from_checkpoint(raw)
 
         clip_model = CLIPModel(
-            input_sites=int(model_cfg.get("input_sites", model_cfg.get("input_genes", 0))),
-            embed_dim=int(model_cfg["embed_dim"]),
-            img_enc_name=model_cfg.get("img_enc_name", "gigapath"),
-            dnameth_enc_name=model_cfg.get("dnameth_enc_name", model_cfg.get("gene_enc_name", "cpgpt")),
-            loss=model_cfg.get("loss", "CLIP"),
-            img_finetune=bool(model_cfg.get("img_finetune", model_cfg.get("img_finetune", False))),
-            dnameth_finetune=bool(model_cfg.get("dnameth_finetune", model_cfg.get("gene_finetune", False))),
-            n_tissue=model_cfg.get("n_tissue"),
-            n_region=model_cfg.get("n_region"),
-            image_size=int(model_cfg.get("image_size", 224)),
-            temperature=float(model_cfg.get("temperature", 0.07)),
-            world_size=int(model_cfg.get("world_size", 1)),
-            rank=int(model_cfg.get("rank", 0)),
-            img_proj=model_cfg.get("img_proj", model_cfg.get("image_proj", "linear")),
-            dnameth_proj=model_cfg.get("dnameth_proj", model_cfg.get("gene_proj", "identity")),
-            **clip_kwargs,
+            input_sites=int(arch.get("input_sites", 0)),
+            embed_dim=int(arch["embed_dim"]),
+            img_enc_name=arch.get("img_enc_name", "gigapath"),
+            dnameth_enc_name=arch.get("dnameth_enc_name", "cpgpt"),
+            loss=arch.get("loss", "CLIP"),
+            img_finetune=bool(arch.get("img_finetune", False)),
+            dnameth_finetune=bool(arch.get("dnameth_finetune", False)),
+            n_tissue=arch.get("n_tissue"),
+            n_region=arch.get("n_region"),
+            image_size=int(arch.get("image_size", 224)),
+            temperature=float(arch.get("temperature", 0.07)),
+            world_size=int(arch.get("world_size", 1)),
+            rank=int(arch.get("rank", 0)),
+            img_proj=arch.get("img_proj", "linear"),
+            dnameth_proj=arch.get("dnameth_proj", "identity"),
         )
 
-        state = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-        state_dict = _extract_model_state(state)
+        state_dict = _extract_model_state(raw)
         incompatible = clip_model.load_state_dict(state_dict, strict=False)
         if incompatible.missing_keys:
             logger.warning("Missing keys when loading %s: %s", ckpt_path, sorted(incompatible.missing_keys))
         if incompatible.unexpected_keys:
-            logger.warning(
-                "Unexpected keys when loading %s: %s", ckpt_path, sorted(incompatible.unexpected_keys)
-            )
+            logger.warning("Unexpected keys when loading %s: %s", ckpt_path, sorted(incompatible.unexpected_keys))
 
         clip_model.eval()
         clip_model.to(self.device)
@@ -198,7 +241,7 @@ class ClipImageEmbeddingExtractor:
 
 
 class ClipDnaEmbeddingExtractor:
-    """Extract only the DNA methylation branch embeddings (CpGPT baseline)."""
+    """Extract only the DNA-methylation branch embeddings (CpGPT baseline)."""
 
     def __init__(self, config: ClipModelConfig):
         self.bundle = _ClipModelBundle(config)
@@ -212,11 +255,11 @@ class ClipDnaEmbeddingExtractor:
         with torch.no_grad():
             for start in range(0, len(samples), self.batch_size):
                 batch_samples = samples[start : start + self.batch_size]
-                batch_beta = [sample.dnameth_path for sample in batch_samples]
-                dnameth_embed = model.dnameth_encoder(batch_beta)
+                batch_dna = [sample.dnameth_path for sample in batch_samples]
+                dna_embed = model.dnameth_encoder(batch_dna)
                 if self.normalize_output:
-                    dnameth_embed = F.normalize(dnameth_embed, p=2, dim=-1)
-                for sample, vector in zip(batch_samples, dnameth_embed, strict=True):
+                    dna_embed = F.normalize(dna_embed, p=2, dim=-1)
+                for sample, vector in zip(batch_samples, dna_embed, strict=True):
                     results[sample.sample_id] = vector.detach().cpu().numpy()
 
         return results
