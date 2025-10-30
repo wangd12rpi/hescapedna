@@ -3,10 +3,10 @@ cache:
   dir: ${project_root:}/experiments/evaluation/cache
 
 output:
-  dir: ${project_root:}/experiments/evaluation/outputs/${now:%Y%m%d_%H%M%S}
+  dir: ${project_root:}/experiments/evaluation/outputs/
 
 # Choose embedders and splits to evaluate
-embedders: ["clip_gigapath", "clip_cpgpt", "gigapath_base", "cpgpt_base"]
+embedders: ["clip_gigapath"]
 splits: ["test"]
 
 dataset:

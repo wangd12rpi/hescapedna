@@ -9,6 +9,7 @@ import torch
 from omegaconf import OmegaConf
 from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import StratifiedKFold
+from tqdm import tqdm
 
 from hescape._utils import find_root
 from hescape.evaluation import SampleIndex, load_samples
@@ -32,8 +33,6 @@ def _ensure_dir(p: Path) -> None:
 def _read_manifest(folder: Path) -> Dict[str, Path]:
     manifest = folder / "manifest.jsonl"
     mapping: Dict[str, Path] = {}
-    if not manifest.exists():
-        return mapping
     with manifest.open("r", encoding="utf-8") as f:
         for line in f:
             row = json.loads(line)
@@ -45,8 +44,6 @@ def _load_vectors_for_samples(sample_ids: List[str], manifest: Mapping[str, Path
     result: Dict[str, np.ndarray] = {}
     for sid in sample_ids:
         p = manifest.get(sid)
-        if p is None or not Path(p).exists():
-            continue
         vec = torch.load(p, map_location="cpu")
         if isinstance(vec, torch.Tensor):
             vec = vec.detach().cpu().numpy()
@@ -139,7 +136,7 @@ def main() -> None:
 
     # Which embedders and splits to evaluate
     embedders: List[str] = list(cfg.get("embedders", ["align", "gigapath", "cpgpt"]))
-    splits: List[str] = list(cfg.get("splits", ["test"]))
+    splits: List[str] = list(cfg.get("splits"))
 
     ds_cfg = cfg["dataset"]
     vocab = ds_cfg.get("cpgpt_vocab_path")
@@ -169,6 +166,7 @@ def main() -> None:
 
         # Tasks loop
         for task_name, task_cfg in cfg["tasks"].items():
+            print("Running task", task_name)
             label_field = task_cfg["label_field"]
             positive = str(task_cfg["positive_label"])
             negative = str(task_cfg["negative_label"])
@@ -183,19 +181,15 @@ def main() -> None:
             weight_decay = float(clf.get("weight_decay", 0.0))
 
             sample_ids, y = _collect_labels(dataset, label_field, positive, negative)
-            if not sample_ids:
-                continue
+
 
             for e in embedders:
                 manifest = man_by_embedder.get(e, {})
                 vecs_map = _load_vectors_for_samples(sample_ids, manifest)
-                if not vecs_map:
-                    continue
                 # Align vectors to the sample_id order
                 x = np.stack([vecs_map[sid] for sid in sample_ids if sid in vecs_map])
                 y_eff = np.array([y[i] for i, sid in enumerate(sample_ids) if sid in vecs_map], dtype=np.int64)
-                if x.shape[0] < 2 or x.ndim != 2:
-                    continue
+
 
                 aurocs, auprcs = _train_eval_nn(
                     x, y_eff,
@@ -225,6 +219,7 @@ def main() -> None:
                 })
 
     # Write results
+    print(results)
     with (out_dir / "results.json").open("w", encoding="utf-8") as f:
         json.dump({"results": results}, f, indent=2)
 
