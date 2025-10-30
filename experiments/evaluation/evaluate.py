@@ -20,7 +20,7 @@ def _project_root() -> Path:
 
 def _load_cfg() -> dict:
     OmegaConf.register_new_resolver("project_root", lambda: str(_project_root()))
-    cfg_path = _project_root() / "experiments" / "configuration" / "evaluate.yaml"
+    cfg_path = _project_root() / "experiments" / "eval_configs" / "evaluate.yaml"
     cfg = OmegaConf.load(cfg_path)
     return OmegaConf.to_container(cfg, resolve=True)  # type: ignore[return-value]
 

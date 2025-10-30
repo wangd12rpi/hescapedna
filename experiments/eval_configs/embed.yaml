@@ -4,7 +4,7 @@ cache:
 
 dataset:
   cpgpt_vocab_path: ${project_root:}/data/cpgpt_files/dependencies/model/vocab/cancer.json
-  processed_beta_dir: ${project_root:}/data/_processed_beta_eval
+  processed_beta_dir: ${project_root:}/eval_cache
   dropna: true
   train:
     root_dir: ${project_root:}/data/wsi_dnameth/train
@@ -14,7 +14,7 @@ dataset:
     index_path: ${dataset.test.root_dir}/index_tile.jsonl
 
 clip:
-  checkpoint_path: ${project_root:}/results/human_lung_healthy_panel/local/checkpoints/last.ckpt
+  checkpoint_path: ${project_root:}/results/human-lung-healthy-panel_20251028_132155/local/checkpoints/last.ckpt
   device: null
   batch_size: 8
   normalize_output: true

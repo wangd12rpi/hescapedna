@@ -26,7 +26,7 @@ def _project_root() -> Path:
 def _load_cfg() -> dict:
     # Read experiments/configuration/embed.yaml with ${project_root} resolver
     OmegaConf.register_new_resolver("project_root", lambda: str(_project_root()))
-    cfg_path = _project_root() / "experiments" / "configuration" / "embed.yaml"
+    cfg_path = _project_root() / "experiments" / "eval_configs" / "embed.yaml"
     cfg = OmegaConf.load(cfg_path)
     return OmegaConf.to_container(cfg, resolve=True)  # type: ignore[return-value]
 
@@ -99,10 +99,8 @@ def main() -> None:
     dropna = bool(ds_cfg.get("dropna", True))
 
     splits: Dict[str, dict] = {}
-    if "train" in ds_cfg:
-        splits["train"] = ds_cfg["train"]
-    if "test" in ds_cfg:
-        splits["test"] = ds_cfg["test"]
+    splits["train"] = ds_cfg["train"]
+    splits["test"] = ds_cfg["test"]
 
     # CLIP instantiation purely from checkpoint
     clip_section = cfg["clip"]

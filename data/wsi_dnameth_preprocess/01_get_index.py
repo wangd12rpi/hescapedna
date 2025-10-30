@@ -589,7 +589,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build paired WSI + DNA methylation index and add downstream labels.")
     parser.add_argument("--project_id", type=str, default="TCGA-BRCA", help="TCGA project id or None for all TCGA")
     parser.add_argument("--program", type=str, default="TCGA", help="Program filter")
-    parser.add_argument("--max_cases", type=int, default=10, help="Optional limit on number of paired cases")
+    parser.add_argument("--max_cases", type=int, default=None, help="Optional limit on number of paired cases")
     parser.add_argument("--api_page_size", type=int, default=1000)
     parser.add_argument("--train_frac", type=float, default=0.8, help="Train fraction for split")
     parser.add_argument("--seed", type=int, default=1337, help="Random seed for splitting")
