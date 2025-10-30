@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
@@ -13,6 +14,12 @@ from omegaconf import OmegaConf
 from hescape.constants import DatasetEnum
 from hescape.evaluation.data import EvaluationSample
 from hescape.models import CLIPModel
+
+# New imports for base encoders & caching
+from hescape.models.image_models._gigapath import _build_gigapath_model
+from gigapath import pipeline
+from hescape.models._cache import EmbeddingCache
+from hescape.models.dnameth_models._cpgpt import CpGPTRunner
 
 logger = logging.getLogger(__name__)
 
@@ -108,10 +115,10 @@ class _ClipModelBundle:
 
     def model(self) -> CLIPModel:
         if self._model is None:
-            self._model = self._build()
-        return self._model
+            self._build_and_cache()
+        return self._model  # type: ignore[return-value]
 
-    def _build(self) -> CLIPModel:
+    def _build_and_cache(self) -> None:
         ckpt_path = self.cfg.checkpoint_path
         if not ckpt_path.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
@@ -150,7 +157,7 @@ class _ClipModelBundle:
 
         clip_model.eval()
         clip_model.to(self.device)
-        return clip_model
+        self._model = clip_model
 
 
 class ClipFusionEmbeddingExtractor:
@@ -214,7 +221,7 @@ class ClipFusionEmbeddingExtractor:
 
 
 class ClipImageEmbeddingExtractor:
-    """Extract only the image branch embeddings (e.g., baseline GigaPath features)."""
+    """Extract only the image branch embeddings (e.g., baseline GigaPath features with CLIP head)."""
 
     def __init__(self, config: ClipModelConfig):
         self.bundle = _ClipModelBundle(config)
@@ -239,7 +246,7 @@ class ClipImageEmbeddingExtractor:
 
 
 class ClipDnaEmbeddingExtractor:
-    """Extract only the DNA-methylation branch embeddings (CpGPT baseline)."""
+    """Extract only the DNA-methylation branch embeddings (CpGPT baseline through CLIP head)."""
 
     def __init__(self, config: ClipModelConfig):
         self.bundle = _ClipModelBundle(config)
@@ -260,4 +267,83 @@ class ClipDnaEmbeddingExtractor:
                 for sample, vector in zip(batch_samples, dna_embed, strict=True):
                     results[sample.sample_id] = vector.detach().cpu().numpy()
 
+        return results
+
+
+class GigaPathBaseEmbeddingExtractor:
+    """
+    Extract raw slide embeddings directly from the GigaPath slide encoder (no CLIP projection head).
+    Uses the same caching policy for tile embeddings as the ImageEncoder.
+    """
+
+    def __init__(self, config: ClipModelConfig):
+        self.device = _default_device(config.device)
+        # Load pre-trained tile/slide encoders from the GigaPath pipeline
+        self.tile_encoder, self.slide_encoder = _build_gigapath_model()
+        self.normalize_output: bool = config.normalize_output
+        self.batch_size: int = max(1, config.batch_size)
+        self.tile_cache = EmbeddingCache("tile_embeddings")
+
+    def _tile_outputs_for_slide(self, slide_dir: str) -> Mapping[str, Any]:
+        def _compute():
+            image_paths = [
+                os.path.join(slide_dir, fname)
+                for fname in os.listdir(slide_dir)
+                if fname.lower().endswith(".png")
+            ]
+            with torch.no_grad():
+                return pipeline.run_inference_with_tile_encoder(
+                    image_paths, self.tile_encoder, batch_size=64
+                )
+        return self.tile_cache.get_or_compute(slide_dir, _compute)
+
+    def embed(self, samples: Sequence[EvaluationSample]) -> Dict[str, np.ndarray]:
+        results: Dict[str, np.ndarray] = {}
+        with torch.no_grad():
+            for sample in samples:
+                tile_out = self._tile_outputs_for_slide(sample.image_path)
+                slide_out = pipeline.run_inference_with_slide_encoder(
+                    slide_encoder_model=self.slide_encoder,
+                    **tile_out,
+                )
+                vec = slide_out["last_layer_embed"]
+                if isinstance(vec, torch.Tensor):
+                    vec = vec.squeeze(0)
+                else:
+                    vec = torch.as_tensor(vec).squeeze(0)
+                if self.normalize_output:
+                    vec = F.normalize(vec, p=2, dim=-1)
+                results[sample.sample_id] = vec.detach().cpu().numpy()
+        return results
+
+
+class CpGPTBaseEmbeddingExtractor:
+    """
+    Extract sample embeddings directly from CpGPT (no CLIP projection head).
+    Reads the CpGPT dependencies root from the Lightning hparams.yaml used to train CLIP.
+    """
+
+    def __init__(self, config: ClipModelConfig):
+        self.device = _default_device(config.device)
+        self.normalize_output: bool = config.normalize_output
+        self.batch_size: int = max(1, config.batch_size)
+
+        arch = _load_arch_from_hparams(config.hparams_path)
+        # path to cpgpt_files root used during training
+        cpgpt_root = arch["dnameth_enc_path"]
+        model_name = arch.get("dnameth_enc_name", "cancer")
+        # Runner has its own caching for per-file embeddings
+        self.runner = CpGPTRunner(root=cpgpt_root, model_name=str(model_name), device=str(self.device), precision="16-mixed", cache_embeddings=True)
+
+    def embed(self, samples: Sequence[EvaluationSample]) -> Dict[str, np.ndarray]:
+        results: Dict[str, np.ndarray] = {}
+        with torch.no_grad():
+            for start in range(0, len(samples), self.batch_size):
+                batch_samples = samples[start : start + self.batch_size]
+                paths = [s.dnameth_path for s in batch_samples]
+                emb = self.runner.encode_beta_files(paths)  # [B, D]
+                if self.normalize_output:
+                    emb = F.normalize(emb, p=2, dim=-1)
+                for sample, vector in zip(batch_samples, emb, strict=True):
+                    results[sample.sample_id] = vector.detach().cpu().numpy()
         return results

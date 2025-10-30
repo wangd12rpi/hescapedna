@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping
+from typing import Dict, List, Mapping
 
 import numpy as np
 import torch
@@ -12,11 +12,13 @@ from hescape._utils import find_root
 from hescape.evaluation import (
     ClipFusionEmbeddingExtractor,
     ClipImageEmbeddingExtractor,
+    ClipDnaEmbeddingExtractor,
     ClipModelConfig,
     SampleIndex,
     load_samples,
+    GigaPathBaseEmbeddingExtractor,
+    CpGPTBaseEmbeddingExtractor,
 )
-from hescape.evaluation.embedder import ClipDnaEmbeddingExtractor  # new DNA-only extractor
 
 
 def _project_root() -> Path:
@@ -63,27 +65,36 @@ def _embed_split(
     dataset: SampleIndex,
     cache_dir: Path,
     clip_cfg: ClipModelConfig,
-    normalize_output: bool,
-    batch_size: int,
-    do_align: bool,
-    do_img: bool,
-    do_dna: bool,
+    selected: set[str],
 ) -> None:
+    """
+    Write four optional caches based on `selected`:
+      - clip_gigapath: CLIP image branch (after head)
+      - clip_cpgpt:   CLIP DNA branch (after head)
+      - gigapath_base: direct GigaPath slide embeddings (no CLIP head)
+      - cpgpt_base:    direct CpGPT sample embeddings (no CLIP head)
+    """
     target = cache_dir / name
-    if do_align:
-        fusion = ClipFusionEmbeddingExtractor(clip_cfg)
-        mapping = fusion.embed(list(dataset))
-        _save_per_sample(target / "align", mapping)
 
-    if do_img:
+    if "clip_gigapath" in selected:
         image = ClipImageEmbeddingExtractor(clip_cfg)
         mapping = image.embed(list(dataset))
-        _save_per_sample(target / "gigapath", mapping)
+        _save_per_sample(target / "clip_gigapath", mapping)
 
-    if do_dna:
+    if "clip_cpgpt" in selected:
         dna = ClipDnaEmbeddingExtractor(clip_cfg)
         mapping = dna.embed(list(dataset))
-        _save_per_sample(target / "cpgpt", mapping)
+        _save_per_sample(target / "clip_cpgpt", mapping)
+
+    if "gigapath_base" in selected:
+        gp = GigaPathBaseEmbeddingExtractor(clip_cfg)
+        mapping = gp.embed(list(dataset))
+        _save_per_sample(target / "gigapath_base", mapping)
+
+    if "cpgpt_base" in selected:
+        cp = CpGPTBaseEmbeddingExtractor(clip_cfg)
+        mapping = cp.embed(list(dataset))
+        _save_per_sample(target / "cpgpt_base", mapping)
 
 
 def main() -> None:
@@ -99,10 +110,13 @@ def main() -> None:
     dropna = bool(ds_cfg.get("dropna", True))
 
     splits: Dict[str, dict] = {}
-    splits["train"] = ds_cfg["train"]
-    splits["test"] = ds_cfg["test"]
+    # make keys explicit if present
+    if "train" in ds_cfg:
+        splits["train"] = ds_cfg["train"]
+    if "test" in ds_cfg:
+        splits["test"] = ds_cfg["test"]
 
-    # CLIP instantiation purely from checkpoint
+    # CLIP instantiation purely from checkpoint/hparams
     clip_section = cfg["clip"]
     clip_cfg = ClipModelConfig(
         checkpoint_path=Path(clip_section["checkpoint_path"]),
@@ -113,10 +127,7 @@ def main() -> None:
     )
 
     # Which embedders to run
-    embedders = set(cfg.get("embedders", ["align", "gigapath", "cpgpt"]))
-    do_align = "align" in embedders
-    do_img = "gigapath" in embedders
-    do_dna = "cpgpt" in embedders
+    embedders = set(cfg.get("embedders", []))
 
     for split_name, sc in splits.items():
         root_dir = sc["root_dir"]
@@ -133,11 +144,7 @@ def main() -> None:
             dataset,
             cache_dir,
             clip_cfg,
-            normalize_output=clip_cfg.normalize_output,
-            batch_size=clip_cfg.batch_size,
-            do_align=do_align,
-            do_img=do_img,
-            do_dna=do_dna,
+            selected=embedders,
         )
 
     print(f"Embedding cache written under: {cache_dir}")

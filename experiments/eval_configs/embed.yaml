@@ -22,4 +22,4 @@ clip:
   normalize_output: true
 
 # Which embedders to compute
-embedders: ["align", "gigapath", "cpgpt"]
+embedders: ["clip_gigapath", "clip_cpgpt", "gigapath_base", "cpgpt_base"]

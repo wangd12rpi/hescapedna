@@ -4,6 +4,8 @@ from hescape.evaluation.embedder import (
     ClipImageEmbeddingExtractor,
     ClipDnaEmbeddingExtractor,
     ClipModelConfig,
+    GigaPathBaseEmbeddingExtractor,
+    CpGPTBaseEmbeddingExtractor,
 )
 from hescape.evaluation.tasks import (
     BinaryClassificationTask,
@@ -17,6 +19,8 @@ __all__ = [
     "ClipImageEmbeddingExtractor",
     "ClipDnaEmbeddingExtractor",
     "ClipModelConfig",
+    "GigaPathBaseEmbeddingExtractor",
+    "CpGPTBaseEmbeddingExtractor",
     "CrossValidationResult",
     "EvaluationSample",
     "FoldResult",
