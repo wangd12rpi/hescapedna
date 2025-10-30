@@ -3,10 +3,9 @@ cache:
   dir: ${project_root:}/experiments/evaluation/cache
 
 output:
-  dir: ${project_root:}/experiments/evaluation/outputs/${now:%Y%m%d_%H%M%S}
-
+  dir: ${project_root:}/experiments/evaluation/outputs/result_eval
 # Embedders to evaluate (names must match folders created by the embed stage)
-embedders: ["clip_gigapath", "clip_cpgpt", "gigapath_base", "cpgpt_base"]
+embedders: ["clip_gigapath"]
 
 # We require an explicit train/test protocol
 splits: ["train", "test"]
@@ -17,10 +16,10 @@ dataset:
   dropna: true
   train:
     root_dir: ${project_root:}/data/wsi_dnameth/train
-    index_path: ${dataset.train.root_dir}/index_tile.jsonl
+    index_path: ${dataset.train.root_dir}/index.jsonl
   test:
     root_dir: ${project_root:}/data/wsi_dnameth/test
-    index_path: ${dataset.test.root_dir}/index_tile.jsonl
+    index_path: ${dataset.test.root_dir}/index.jsonl
 
 # Classifier settings (read exactly from YAML; no hidden defaults in code)
 classifier:
@@ -40,6 +39,6 @@ tasks:
     negative_label: "8500/3"   # IDC-NOS
 
   tp53_mutation:
-    label_field: metadata.mutations.TP53
+    label_field: labels.mutations.TP53
     positive_label: "True"
     negative_label: "False"

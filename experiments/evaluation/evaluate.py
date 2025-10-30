@@ -58,6 +58,7 @@ def _read_manifest(folder: Path) -> Dict[str, Path]:
         for line in f:
             row = json.loads(line)
             sid = str(row["sample_id"])
+
             p = Path(row["path"])
             mapping[sid] = p
     if not mapping:
@@ -264,8 +265,8 @@ def main() -> None:
             test_vecs_map = _load_vectors_for_samples(test_ids, manifests[("test", e)], desc=f"load {e} (test)")
 
             # Align order strictly to the sample_id lists (raises if any missing above)
-            x_train = np.stack([train_vecs_map[sid] for sid in train_ids])
-            x_test = np.stack([test_vecs_map[sid] for sid in test_ids])
+            x_train = np.stack([train_vecs_map[sid] for sid in train_vecs_map])
+            x_test = np.stack([test_vecs_map[sid] for sid in test_vecs_map])
 
             # Sanity checks (let shape errors throw)
             logging.info(
