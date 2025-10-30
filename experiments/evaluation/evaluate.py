@@ -123,6 +123,7 @@ def _prepare_binary_labels(index: SampleIndex, label_field: str, positive: str, 
     labels = index.labels(label_field)
     sample_ids: List[str] = []
     y: List[int] = []
+
     for sid, label in labels.items():
         if label == positive:
             sample_ids.append(sid)

@@ -64,7 +64,7 @@ def process_case(case_data: Dict[str, Any], root: Path) -> Dict[str, Any]:
     slide_path = root / case_data["slide"]["local_path"]
     sample_dir = slide_path.parent
     tiles_root = sample_dir / "tiles"
-
+    print(slide_path)
     slide_save_dir = tile_slide(slide_path, tiles_root)
     slide_name = str(slide_path).split("/")[-1]
     tile_local_path = slide_save_dir.relative_to(root)

@@ -40,5 +40,10 @@ tasks:
 
   tp53_mutation:
     label_field: labels.mutations.TP53
-    positive_label: "True"
-    negative_label: "False"
+    positive_label: true
+    negative_label: false
+
+  pik3ca_mutation:
+    label_field: labels.mutations.PIK3CA
+    positive_label: true
+    negative_label: false

@@ -67,7 +67,9 @@ class SampleIndex:
         return SampleIndex(sample for sample in self._samples if predicate(sample))
 
     def labels(self, key_path: str, default: Any | None = None) -> Dict[str, Any | None]:
-        return {sample.sample_id: sample.get(key_path, default=default) for sample in self._samples}
+
+        ret = {sample.sample_id: str(sample.get(key_path, default=default)) for sample in self._samples}
+        return ret
 
 
 def load_samples(
