@@ -8,10 +8,10 @@ dataset:
   dropna: true
   train:
     root_dir: ${project_root:}/data/wsi_dnameth/train
-    index_path: ${dataset.train.root_dir}/index.jsonl
+    index_path: ${dataset.train.root_dir}/index_tile.jsonl
   test:
     root_dir: ${project_root:}/data/wsi_dnameth/test
-    index_path: ${dataset.test.root_dir}/index.jsonl
+    index_path: ${dataset.test.root_dir}/index_tile.jsonl
 
 clip:
   checkpoint_path: ${project_root:}/results/human-lung-healthy-panel_20251028_132155/local/checkpoints/last.ckpt
@@ -22,4 +22,4 @@ clip:
   normalize_output: true
 
 # Which embedders to compute
-embedders: ["clip_gigapath"]
+embedders: ["gigapath_base"]

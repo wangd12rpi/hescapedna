@@ -10,6 +10,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from omegaconf import OmegaConf
+from tqdm import tqdm
 
 from hescape.constants import DatasetEnum
 from hescape.evaluation.data import EvaluationSample
@@ -300,7 +301,7 @@ class GigaPathBaseEmbeddingExtractor:
     def embed(self, samples: Sequence[EvaluationSample]) -> Dict[str, np.ndarray]:
         results: Dict[str, np.ndarray] = {}
         with torch.no_grad():
-            for sample in samples:
+            for sample in tqdm(samples):
                 tile_out = self._tile_outputs_for_slide(sample.image_path)
                 slide_out = pipeline.run_inference_with_slide_encoder(
                     slide_encoder_model=self.slide_encoder,

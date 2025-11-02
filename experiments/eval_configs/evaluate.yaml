@@ -5,7 +5,7 @@ cache:
 output:
   dir: ${project_root:}/experiments/evaluation/outputs/result_eval
 # Embedders to evaluate (names must match folders created by the embed stage)
-embedders: ["clip_gigapath"]
+embedders: ["clip_gigapath", "gigapath_base"]
 
 # We require an explicit train/test protocol
 splits: ["train", "test"]
