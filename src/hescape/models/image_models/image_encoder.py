@@ -5,7 +5,7 @@ import logging
 import os
 from collections import OrderedDict
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from typing import Any, Literal
+from typing import Any, Literal, List, Set
 
 import torch
 import torch.nn as nn
@@ -18,7 +18,6 @@ from hescape.models._utils import print_trainable_parameters
 from hescape.models.image_models._gigapath import _build_gigapath_model
 from hescape.models.image_models._utils import freeze_batch_norm_2d
 from .moe import MoE
-
 
 
 @contextmanager
@@ -48,6 +47,7 @@ class _TrunkWrapper(nn.Module):
         super().__init__()
         self.base_model = nn.Module()
         self.base_model.model = _JointBackbone(tile_encoder, slide_encoder)
+
 
 class MoEHeadAdapter(nn.Module):
     def __init__(
@@ -88,8 +88,26 @@ class MoEHeadAdapter(nn.Module):
         return self.proj(y)
 
 
+def _unique_linear_leaf_names(module: nn.Module) -> List[str]:
+    """
+    Collect unique leaf names of nn.Linear modules, to be used as PEFT LoRA targets
+    with 'endswith' matching. This is robust across typical ViT/MLP naming schemes.
+    """
+    names: Set[str] = set()
+    for name, m in module.named_modules():
+        if isinstance(m, nn.Linear):
+            leaf = name.split(".")[-1]
+            if leaf:
+                names.add(leaf)
+    targets = sorted(names)
+    if not targets:
+        # Fallback to a conservative default
+        targets = ["proj", "qkv", "fc", "fc1", "fc2"]
+    return targets
+
+
 class ImageEncoder(nn.Module):
-    """ImageEncoder that wraps timm models."""
+    """ImageEncoder that wraps GigaPath tile/slide encoders and adds a projection head."""
 
     def __init__(
         self,
@@ -102,42 +120,43 @@ class ImageEncoder(nn.Module):
         super().__init__()
         self.model_name = model_name
 
-        tile_finetune = kwargs.get("finetune_tile", finetune)
-        slide_finetune = kwargs.get("finetune_slide", finetune)
-        cache_tiles = not tile_finetune
+        # Finetuning switches (explicit args take precedence over 'finetune')
+        self.finetune_tile: bool = kwargs.get("finetune_tile", finetune)
+        self.finetune_slide: bool = kwargs.get("finetune_slide", finetune)
 
-        tile_encoder, slide_encoder, self.total_blocks = self._build_trunks(
-            self.model_name,
-        )
+        # Enable cache only when the tile encoder is frozen
+        cache_tiles = not self.finetune_tile
 
-        if not tile_finetune:
+        # Build pretrained trunks
+        tile_encoder, slide_encoder, self.total_blocks = self._build_trunks(self.model_name)
+
+        # Freeze when not finetuning
+        if not self.finetune_tile:
             self._freeze_module(tile_encoder)
-        if not slide_finetune:
+        if not self.finetune_slide:
             self._freeze_module(slide_encoder)
 
+        # Apply finetuning adapters
         tile_encoder, slide_encoder = self.get_ft_model(
             model_name,
             tile_encoder,
             slide_encoder,
-            finetune_tile=tile_finetune,
-            finetune_slide=slide_finetune,
+            finetune_tile=self.finetune_tile,
+            finetune_slide=self.finetune_slide,
         )
 
         self.tile_encoder = tile_encoder
         self.slide_encoder = slide_encoder
         self.trunk = _TrunkWrapper(self.tile_encoder, self.slide_encoder)
         self.trunks = (self.tile_encoder, self.slide_encoder)
-        self.finetune_tile = tile_finetune
-        self.finetune_slide = slide_finetune
         self.use_tile_cache = cache_tiles
-        # Build projection head
+
+        # Projection head for slide features
         self.proj = proj
         self.head = self._build_head(proj, 768, embed_dim)
 
-        # Initialize cache for tile embeddings
-        self.tile_cache = EmbeddingCache('tile_embeddings') if self.use_tile_cache else None
-
-        # return hook
+        # Initialize cache for tile embeddings if frozen
+        self.tile_cache = EmbeddingCache("tile_embeddings") if self.use_tile_cache else None
 
     def _build_trunks(
         self,
@@ -145,18 +164,15 @@ class ImageEncoder(nn.Module):
         **_: Any,
     ) -> tuple[nn.Module, nn.Module, int]:
         """
-        Build the trunk (backbone) model for image encoding.
-        Returns (trunk_module, total_blocks).
+        Build the trunk (backbone) models for image encoding.
+        Returns (tile_encoder, slide_encoder, total_blocks).
         """
-
         if model_name == "gigapath":
             tile_encoder, slide_encoder = _build_gigapath_model()
-            print(f"Successfully loaded GigaPath slide encoder for {model_name}")
+            print(f"Successfully loaded GigaPath tile and slide encoders for {model_name}")
             total_blocks = 12
-
         else:
             raise ValueError(f"Unknown model name: {model_name}")
-
         return tile_encoder, slide_encoder, total_blocks
 
     def get_ft_model(
@@ -168,34 +184,45 @@ class ImageEncoder(nn.Module):
         finetune_tile: bool,
         finetune_slide: bool,
     ) -> tuple[nn.Module, nn.Module]:
-        # Define LoRA configurations for each model
-        lora_configs = {"gigapath": {"r": 16, "lora_alpha": 16, "target_modules": ["proj"]}}
-
-        if finetune_slide and model_name in lora_configs:
-            print("**LoRA Enabled for Slide Encoder**")
-            config = lora_configs[model_name]
-            slide_encoder = get_peft_model(
-                slide_encoder,
-                LoraConfig(
-                    r=config["r"],
-                    lora_alpha=config["lora_alpha"],
-                    target_modules=config["target_modules"],
-                    lora_dropout=0.1,
-                    bias="none",
-                ),
-            )
+        """
+        Configure finetuning strategy:
+          - tile encoder: LoRA via PEFT when finetune_tile is True
+          - slide encoder: full finetuning when finetune_slide is True (no LoRA wrapping)
+        """
+        if model_name == "gigapath":
+            # Tile encoder LoRA
+            if finetune_tile:
+                print("**LoRA Enabled for Tile Encoder**")
+                targets = _unique_linear_leaf_names(tile_encoder)
+                print("Tile encoder LoRA targets:", targets)
+                tile_encoder = get_peft_model(
+                    tile_encoder,
+                    LoraConfig(
+                        r=16,
+                        lora_alpha=16,
+                        target_modules=targets,
+                        lora_dropout=0.1,
+                        bias="none",
+                    ),
+                )
+            # Slide encoder full finetuning: nothing to wrap, ensure params are trainable
+            if finetune_slide:
+                for p in slide_encoder.parameters():
+                    p.requires_grad = True
+                print("**Full Finetuning Enabled for Slide Encoder**")
+        else:
+            raise ValueError(f"Unknown model name for finetuning: {model_name}")
 
         return tile_encoder, slide_encoder
 
     def _build_head(self, proj: str, in_features: int, embed_dim: int) -> nn.Sequential:
-        """Build a projection head (Linear or MLP)."""
+        """Build a projection head (Linear, MLP, Transformer, or MoE)."""
         head_layers = OrderedDict()
         if proj == "linear":
             head_layers["linear"] = nn.Linear(in_features, embed_dim)
         elif proj == "mlp":
             head_layers["mlp"] = Mlp(in_features, 2 * embed_dim, embed_dim, drop=0.2, norm_layer=nn.LayerNorm)
         elif proj == "transformer":
-            # Add transformer specific layers here (From torch maybe)
             encoder_layer = nn.TransformerEncoderLayer(d_model=in_features, nhead=8, dim_feedforward=embed_dim)
             transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
             head_layers["transformer"] = transformer_encoder
@@ -213,6 +240,8 @@ class ImageEncoder(nn.Module):
                 noisy_gating=True,
                 acc_aux_loss=False,
             )
+        else:
+            raise ValueError(f"Unknown projection type: {proj}")
 
         return nn.Sequential(head_layers)
 
@@ -228,14 +257,26 @@ class ImageEncoder(nn.Module):
         self._freeze_module(self.slide_encoder, freeze_bn_stats=freeze_bn_stats)
 
     def _load_tile_embeddings_cached(self, slide_dir: str, tile_encoder) -> dict:
-        """Load tile embeddings from cache or compute if not cached."""
+        """
+        Load tile embeddings from cache or compute if not cached.
+        Uses no_grad and cache only when the tile encoder is frozen; when LoRA is active,
+        we must compute with autograd and without caching.
+        """
+
         def compute_tile_embeddings():
-            image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith('.png')]
-            # with quiet_encoding():
-            with torch.no_grad():
-                return pipeline.run_inference_with_tile_encoder(
-                    image_paths, tile_encoder, batch_size=64
-                )
+            image_paths = [os.path.join(slide_dir, img) for img in os.listdir(slide_dir) if img.endswith(".png")]
+            if self.finetune_tile:
+                # Finetuning path: preserve autograd graph and the caller's train/eval mode.
+                return pipeline.run_inference_with_tile_encoder(image_paths, tile_encoder, batch_size=64)
+            else:
+                # Frozen path: faster, deterministic inference
+                prev_training = tile_encoder.training
+                try:
+                    tile_encoder.eval()
+                    with torch.no_grad():
+                        return pipeline.run_inference_with_tile_encoder(image_paths, tile_encoder, batch_size=64)
+                finally:
+                    tile_encoder.train(prev_training)
 
         if self.tile_cache is None:
             return compute_tile_embeddings()
@@ -244,51 +285,40 @@ class ImageEncoder(nn.Module):
     def forward(self, x):
         embeds = []
 
-        if self.proj in ["mlp", "linear", "moe"]:
+        if self.proj in ["mlp", "linear", "moe", "transformer"]:
             for slide_dir in x:
-                # Load tile embeddings from cache or compute
+                # 1) Tile embeddings (with or without cache/autograd)
                 tile_encoder_outputs = self._load_tile_embeddings_cached(slide_dir, self.tile_encoder)
 
-                slide_embeds = pipeline.run_inference_with_slide_encoder(
+                # 2) Slide-level embedding (preserve autograd; pipeline no longer forces eval)
+                slide_out = pipeline.run_inference_with_slide_encoder(
                     slide_encoder_model=self.slide_encoder,
-                    **tile_encoder_outputs
+                    train_mode=self.finetune_slide,
+                    **tile_encoder_outputs,
                 )
 
-                embeds.append(slide_embeds['last_layer_embed'])
+                slide_embed = slide_out["last_layer_embed"]
+                embeds.append(slide_embed)
 
-            # Stack to preserve gradient flow through batch dimension
-            embeds = torch.stack([e.squeeze(0) if e.dim() > 1 else e for e in embeds], dim=0)
-            # print(embeds.shape)
+            # Stack to [B, D]
+            embeds = torch.stack([e.squeeze(0) if isinstance(e, torch.Tensor) and e.dim() > 1 else e for e in embeds], dim=0)
+
+            # Projection head
             embeds = self.head(embeds)
-
         else:
-            print(f"[ENCODER DEBUG] No branch matched for proj={self.proj}, returning raw x={x.shape}")
+            print(f"[ENCODER DEBUG] No branch matched for proj={self.proj}, returning raw x={type(x)}")
 
         return embeds
 
 
 if __name__ == "__main__":
-    # Create an instance of the ImageEncoder class
-
-    for model_name in ["optimus"]:  # , "uni", "ctranspath", "optimus", "conch", "gigapath"]:
-        encoder = ImageEncoder(
-            model_name=model_name,
-            finetune=True,
-            embed_dim=128,
-            proj="mlp",
-            checkpoint_path="/p/project1/hai_spatial_clip/pretrain_weights/image",
-        )
-
-        # encoder.freeze()
-
-        encoder = encoder.to("cuda")
-        dummy_input = torch.Tensor(1, 3, 224, 224).uniform_().to("cuda")
-        output = encoder(dummy_input)
-        print(output.shape)  # Output shape: [batch_size, num_features]
-
-        # print parameter names which have gradient set to True
-        for name, param in encoder.named_parameters():
-            if param.requires_grad:
-                print(name)
-
-        print_trainable_parameters(model_name, encoder)
+    # Minimal smoke test (not executed in training)
+    encoder = ImageEncoder(
+        model_name="gigapath",
+        finetune=True,
+        embed_dim=128,
+        proj="mlp",
+        finetune_tile=True,
+        finetune_slide=True,
+    )
+    print_trainable_parameters("gigapath", encoder)

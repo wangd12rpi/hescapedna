@@ -2,7 +2,7 @@ litmodule:
   _target_: hescape.modules.pretrain_module.PretrainModule
   _partial_: true
   input_genes: 0  # Will be set dynamically after datamodule setup for DNA meth
-  embed_dim: 128
+  embed_dim: 256
   img_enc_name: gigapath # options: "ctranspath", "densenet", "uni", "optimus", "conch", "gigapath"
   gene_enc_name: cpgpt
   loss: SIGLIP

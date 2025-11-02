@@ -134,7 +134,7 @@ class SourceAwareContrastiveLoss(nn.Module):
 
         source_aware_loss /= N
 
-        return {"contrastive_loss": loss} if output_dict else source_aware_loss
+        return {"contrastive_loss": source_aware_loss} if output_dict else source_aware_loss
 
 
 def print_trainable_parameters(name, model):

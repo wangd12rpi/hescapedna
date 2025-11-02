@@ -15,9 +15,9 @@ name: hescape_default_training
 model:
   litmodule:
     img_enc_name: gigapath
-    tile_finetune: false
+    tile_finetune: true
     slide_finetune: true
-    gene_finetune: false
+    gene_finetune: true
     img_proj: linear
     gene_enc_name: cpgpt
     gene_proj: linear
