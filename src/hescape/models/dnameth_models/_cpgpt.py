@@ -32,15 +32,8 @@ def _unique_linear_leaf_names(module: torch.nn.Module) -> List[str]:
     Collect unique leaf names of nn.Linear modules for robust PEFT LoRA targeting
     (uses endswith matching in PEFT).
     """
-    names: set[str] = set()
-    for name, m in module.named_modules():
-        if isinstance(m, torch.nn.Linear):
-            leaf = name.split(".")[-1]
-            if leaf:
-                names.add(leaf)
-    targets = sorted(names)
-    if not targets:
-        targets = ["proj", "qkv", "fc", "fc1", "fc2"]
+
+    targets = ["linear1"]
     return targets
 
 
@@ -66,7 +59,7 @@ class CpGPTRunner:
         lora_dropout: float = 0.1,
         lora_targets: List[str] | None = None,
     ) -> None:
-        model_name = "cancer"  # enforce for now unless you change config layout
+        model_name = "large"  # enforce for now unless you change config layout
         self.root = Path(root).resolve()
         self.dependencies_dir = str(self.root / "dependencies")
         self.human_dir = str(self.root / "dependencies" / "human")

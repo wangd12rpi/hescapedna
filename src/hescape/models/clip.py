@@ -121,6 +121,7 @@ class CLIPModel(nn.Module):
 
         dnameth_embed = self.dnameth_encoder(dnameth_input)
         # Encode images
+        print(dnameth_embed)
         img_embed = self.image_encoder(batch[DatasetEnum.IMG])
 
         if norm:
@@ -129,6 +130,7 @@ class CLIPModel(nn.Module):
                 F.normalize(dnameth_embed, p=2, dim=-1),
                 self.logit_scale.exp(),
             )
+
         return img_embed, dnameth_embed, self.logit_scale.exp()
 
     def compute_loss(self, img_embed, dnameth_embed):  # default 1.0

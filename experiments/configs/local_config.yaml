@@ -15,9 +15,9 @@ name: hescape_default_training
 model:
   litmodule:
     img_enc_name: gigapath
-    tile_finetune: true
-    slide_finetune: true
-    gene_finetune: true
+    tile_finetune: false
+    slide_finetune: false
+    gene_finetune: false
     img_proj: linear
     gene_enc_name: cpgpt
     gene_proj: linear
@@ -26,7 +26,7 @@ model:
 
 datamodule:
   seed: 24442
-  batch_size: 16
+  batch_size: 1
   num_workers: 4
   pin_memory: true
   persistent_workers: true

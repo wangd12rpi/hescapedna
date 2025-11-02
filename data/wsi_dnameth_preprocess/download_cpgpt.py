@@ -2,7 +2,7 @@
 RANDOM_SEED = 42
 
 # Directory paths
-DEPENDENCIES_DIR = "../dependencies/cpgpt"
+DEPENDENCIES_DIR = "../cpgpt_files/dependencies"
 DATA_DIR = "../wsi_dnameth"
 from cpgpt.infer.cpgpt_inferencer import CpGPTInferencer
 
