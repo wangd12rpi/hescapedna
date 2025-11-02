@@ -293,7 +293,7 @@ class GigaPathBaseEmbeddingExtractor:
             ]
             with torch.no_grad():
                 return pipeline.run_inference_with_tile_encoder(
-                    image_paths, self.tile_encoder, batch_size=64
+                    image_paths, self.tile_encoder, batch_size=64, train_mode=False
                 )
         return self.tile_cache.get_or_compute(slide_dir, _compute)
 
@@ -304,6 +304,7 @@ class GigaPathBaseEmbeddingExtractor:
                 tile_out = self._tile_outputs_for_slide(sample.image_path)
                 slide_out = pipeline.run_inference_with_slide_encoder(
                     slide_encoder_model=self.slide_encoder,
+                    train_mode=False,
                     **tile_out,
                 )
                 vec = slide_out["last_layer_embed"]

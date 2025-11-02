@@ -73,7 +73,6 @@ def train(cfg: DictConfig) -> None:
     model: LightningModule = hydra.utils.instantiate(cfg.model.litmodule)
     model = model(lambda_scheduler=lr_lambda, cfg=cfg)
 
-    hescape_logger.info("Instantiating callbacks and logger...")
     callbacks: list[Callback] = []
     for _, cb in cfg.training.callbacks.items():
         callbacks.append(hydra.utils.instantiate(cb))
@@ -85,7 +84,6 @@ def train(cfg: DictConfig) -> None:
 
         logger.append(lgr)
 
-    hescape_logger.info("Instantiating trainer...")
     trainer: Trainer = hydra.utils.instantiate(cfg.training.lightning.trainer)
     trainer = trainer(callbacks=callbacks, logger=logger,  num_sanity_val_steps=0)
 
@@ -152,12 +150,12 @@ def main(cfg: DictConfig) -> None:
     from hescape._logging import logger as hescape_logger
     hescape_logger.info("Logging and checkpoints will be written to %s", cfg.paths.anatomy.output)
 
-    pprint(OmegaConf.to_container(cfg, resolve=True))
+    # pprint(OmegaConf.to_container(cfg, resolve=True))
     train(cfg)
 
     print(f"SWEEP PARAMS {sweep_params}, {cfg.paths.anatomy.output}")
     print(f"modelcheckpoint dirpath: {cfg.training.callbacks.model_checkpoint.dirpath}")
-    print(f"csv logger name: {cfg.training.logger.csv.save_dir}")
+    # print(f"csv logger name: {cfg.training.logger.csv.save_dir}")
     # print(f"encoder_path: {cfg.model.litmodule.encoder_path}")
 
     # os.makedirs(cfg.training.logger.wandb.save_dir, exist_ok=True)

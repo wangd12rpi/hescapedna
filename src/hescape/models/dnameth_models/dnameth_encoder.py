@@ -11,44 +11,32 @@ from timm.layers.mlp import Mlp
 
 from hescape.models._utils import print_trainable_parameters
 from hescape.models.dnameth_models._cpgpt import _build_cpgpt_model
-import logging, os
-
-from contextlib import contextmanager, redirect_stdout, redirect_stderr
-
-@contextmanager
-def quiet_encoding():
-    old_disable = logging.root.manager.disable
-    logging.disable(logging.CRITICAL)
-    with open(os.devnull, "w") as devnull, redirect_stdout(devnull), redirect_stderr(devnull):
-        try:
-            yield
-        finally:
-            logging.disable(old_disable)
 
 
 class DnaMethEncoder(nn.Module):
     """
-    Minimal DNA-methylation encoder for hescape that wraps your CpGPT runner.
+    DNA-methylation encoder wrapper that integrates CpGPT.
 
     Forward expects a list of file paths to beta TSV files:
       - Each file has two columns: CpG_Site  Beta_Value  (tab-separated)
 
-    The trunk (CpGPT) is always frozen. You can pick a projection head:
-      proj = "identity" | "linear" | "mlp"
+    Finetuning policy:
+      - If finetune=False (default): CpGPT trunk is frozen and embeddings are produced via a cached, fast path.
+      - If finetune=True: Inject LoRA adapters into CpGPT; forward runs **in-graph** so LoRA weights receive gradients.
+        The CpGPT base stays frozen; only LoRA params (and the projection head) are trainable.
     """
 
     def __init__(
         self,
-        input_sites: int | None,                 # kept for API parity; CpGPT uses its own vocab
+        input_sites: int | None,
         model_name: str = "cancer",
-        embed_dim: int = 128,                    # projection output dimension
-        finetune: bool = False,                  # ignored; CpGPT stays frozen
+        embed_dim: int = 128,
+        finetune: bool = False,
         proj: str = "identity",
-        checkpoint_path: str | None = None,      # root folder holding cpgpt_files/dependencies
+        checkpoint_path: str | None = None,
         **kwargs: Any,
     ):
         super().__init__()
-
         if checkpoint_path is None:
             raise ValueError("checkpoint_path must point to your cpgpt_files root")
 
@@ -57,27 +45,34 @@ class DnaMethEncoder(nn.Module):
         self.model_name = model_name
         self.embed_dim = embed_dim
         self.proj = proj
+        self.finetune = bool(finetune)
 
-        # Build trunk (CpGPT runner). No finetuning.
-        # out_features is unused here; head is separate in this class.
-        with quiet_encoding():
-            self.trunk = _build_cpgpt_model(
-                checkpoint_root=checkpoint_root,
-                in_features=input_sites or 0,
-                out_features=embed_dim,
-                model_name=model_name,
-                cache_embeddings=kwargs.get("cache_embeddings", not finetune),
-            )
-        self.cache_embeddings = bool(getattr(self.trunk, "cache_embeddings", False))
+        # Build trunk (CpGPT runner). Use LoRA adapters only if finetune=True.
+        self.trunk = _build_cpgpt_model(
+            checkpoint_root=checkpoint_root,
+            in_features=input_sites or 0,
+            out_features=embed_dim,
+            model_name=model_name,
+            cache_embeddings=kwargs.get("cache_embeddings", not self.finetune),
+            enable_lora=self.finetune,
+            lora_r=8
+        )
 
-        # CpGPT embeddings dimension resolved from config when available
-        self.trunk_dim = getattr(self.trunk, "embedding_dim", 128)
+        # Register the underlying CpGPT Lightning module as a nn.Module child
+        # so its LoRA parameters are visible to the optimizer.
+        cpgpt_model = getattr(self.trunk, "model", None)
+        if not isinstance(cpgpt_model, nn.Module):
+            raise RuntimeError("CpGPT runner does not expose a valid nn.Module under 'model'.")
+        self.cpgpt: nn.Module = cpgpt_model  # registration via attribute assignment
 
-        # Projection head
+        # Resolve CpGPT embedding size when available
+        self.trunk_dim = int(getattr(self.trunk, "embedding_dim", 128))
+
+        # Projection head (trainable)
         self.head = self._build_head(self.proj, self.trunk_dim, self.embed_dim).to(self.device)
 
-        # Freeze trunk
-        self.freeze()
+        # Configure trainability (freeze/unfreeze policy)
+        self._configure_trainability()
 
     @staticmethod
     def _build_head(proj: str, in_features: int, embed_dim: int) -> nn.Sequential:
@@ -92,23 +87,41 @@ class DnaMethEncoder(nn.Module):
             raise ValueError(f"Unknown projection type: {proj}")
         return nn.Sequential(head_layers)
 
-    def freeze(self):
-        """Trunk (CpGPT) stays frozen; only the head can be trained if desired."""
+    def _configure_trainability(self) -> None:
+        """
+        - finetune=False: freeze entire CpGPT and train only the projection head.
+        - finetune=True: keep CpGPT base frozen, unfreeze only LoRA params + projection head.
+        """
+        # First freeze everything to a known state
         for p in self.parameters():
             p.requires_grad = False
+
+        # Projection head always trainable
         for p in self.head.parameters():
             p.requires_grad = True
+
+        if self.finetune:
+            # Enable only LoRA parameters inside the CpGPT module
+            for name, p in self.cpgpt.named_parameters():
+                if "lora_" in name.lower():
+                    p.requires_grad = True
+
+        # Optional: print a quick summary
+        print_trainable_parameters("dnameth_encoder", self)
 
     def forward(self, beta_paths: List[str]) -> torch.Tensor:
         """
         beta_paths: list of local file paths to TSV beta files.
         Returns:
-          features [B, embed_dim]
+          features [B, embed_dim] on self.device
         """
-        # CpGPT embeddings [B, 128] - caching is now handled inside CpGPTRunner
-        # with quiet_encoding():
-        emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
-        # Project if required
+        if self.finetune:
+            # In-graph path so LoRA adapters can learn
+            emb = self.trunk.encode_beta_files_autograd(beta_paths)
+        else:
+            # Fast frozen path (cached)
+            emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
+
         out = self.head(emb)
         return out
 
@@ -117,18 +130,14 @@ class DnaMethEncoder(nn.Module):
         print_trainable_parameters(tag, self)
 
 
-# quick manual test
-if __name__ == "__main__":
-    # Example:
-    #   checkpoint_path="/media/volume/patho_meth/PathoMethyl-FM/cpgpt_files"
-    #   beta_paths = ["/path/sample1.txt", "/path/sample2.txt", ...]
-    encoder = DnaMethEncoder(
-        input_sites=None,
-        model_name="cancer",
-        embed_dim=128,
-        finetune=False,
-        proj="identity",
-        checkpoint_path="/media/volume/patho_meth/PathoMethyl-FM/cpgpt_files",
-    )
-    # embeddings = encoder(beta_paths)  # [B, 128]
-    # print(embeddings.shape)
+# quick manual test (commented out to avoid side effects on import)
+# if __name__ == "__main__":
+#     encoder = DnaMethEncoder(
+#         input_sites=None,
+#         model_name="cancer",
+#         embed_dim=128,
+#         finetune=True,
+#         proj="identity",
+#         checkpoint_path="/media/volume/patho_meth/PathoMethyl-FM/cpgpt_files",
+#     )
+#     encoder.print_trainable()

@@ -151,8 +151,7 @@ def run_inference_with_tile_encoder(image_paths: List[str], tile_encoder: torch.
     tile_encoder = tile_encoder.cuda()
     # make the tile dataloader
     tile_dl = DataLoader(TileEncodingDataset(image_paths, transform=load_tile_encoder_transforms()), batch_size=batch_size, shuffle=False)
-    # run inference
-    tile_encoder.eval()
+    # preserve caller's train/eval mode; do not override here
     collated_outputs = {'tile_embeds': [], 'coords': []}
     with torch.cuda.amp.autocast(dtype=torch.float16):
         for batch in tqdm(tile_dl, desc='Running inference with tile encoder'):
@@ -179,8 +178,7 @@ def run_inference_with_slide_encoder(tile_embeds: torch.Tensor, coords: torch.Te
         coords = coords.unsqueeze(0)
 
     slide_encoder_model = slide_encoder_model.cuda()
-    slide_encoder_model.eval()
-    # run inference
+    # preserve caller's train/eval mode; do not override here
     with torch.cuda.amp.autocast(dtype=torch.float16):
         slide_embeds = slide_encoder_model(tile_embeds.cuda(), coords.cuda(), all_layer_embed=True)
     outputs = {"layer_{}_embed".format(i): slide_embeds[i] for i in range(len(slide_embeds))}
