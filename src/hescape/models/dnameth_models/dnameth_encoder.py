@@ -37,6 +37,7 @@ class DnaMethEncoder(nn.Module):
         **kwargs: Any,
     ):
         super().__init__()
+
         if checkpoint_path is None:
             raise ValueError("checkpoint_path must point to your cpgpt_files root")
 

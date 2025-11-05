@@ -187,29 +187,40 @@ class ImageEncoder(nn.Module):
         """
         Configure finetuning strategy:
           - tile encoder: LoRA via PEFT when finetune_tile is True
-          - slide encoder: full finetuning when finetune_slide is True (no LoRA wrapping)
+          - slide encoder: **LoRA via PEFT** when finetune_slide is True (base stays frozen)
         """
         if model_name == "gigapath":
             # Tile encoder LoRA
             if finetune_tile:
                 print("**LoRA Enabled for Tile Encoder**")
-                targets = _unique_linear_leaf_names(tile_encoder)
-                print("Tile encoder LoRA targets:", targets)
+                tile_targets = _unique_linear_leaf_names(tile_encoder)
+                print("Tile encoder LoRA targets:", tile_targets)
                 tile_encoder = get_peft_model(
                     tile_encoder,
                     LoraConfig(
                         r=16,
                         lora_alpha=16,
-                        target_modules=targets,
+                        target_modules=tile_targets,
                         lora_dropout=0.1,
                         bias="none",
                     ),
                 )
-            # Slide encoder full finetuning: nothing to wrap, ensure params are trainable
+
+            # Slide encoder LoRA (base frozen; adapters trainable)
             if finetune_slide:
-                for p in slide_encoder.parameters():
-                    p.requires_grad = True
-                print("**Full Finetuning Enabled for Slide Encoder**")
+                print("**LoRA Enabled for Slide Encoder**")
+                slide_targets = _unique_linear_leaf_names(slide_encoder)
+                print("Slide encoder LoRA targets:", slide_targets)
+                slide_encoder = get_peft_model(
+                    slide_encoder,
+                    LoraConfig(
+                        r=16,
+                        lora_alpha=16,
+                        target_modules=slide_targets,
+                        lora_dropout=0.1,
+                        bias="none",
+                    ),
+                )
         else:
             raise ValueError(f"Unknown model name for finetuning: {model_name}")
 
@@ -290,18 +301,20 @@ class ImageEncoder(nn.Module):
                 # 1) Tile embeddings (with or without cache/autograd)
                 tile_encoder_outputs = self._load_tile_embeddings_cached(slide_dir, self.tile_encoder)
 
-                # 2) Slide-level embedding (preserve autograd; pipeline no longer forces eval)
+                # 2) Slide-level embedding (preserve autograd; pipeline keeps caller's train/eval mode)
                 slide_out = pipeline.run_inference_with_slide_encoder(
-                    slide_encoder_model=self.slide_encoder,
-                    train_mode=self.finetune_slide,
-                    **tile_encoder_outputs,
+                    tile_encoder_outputs["tile_embeds"],
+                    tile_encoder_outputs["coords"],
+                    self.slide_encoder,
                 )
 
                 slide_embed = slide_out["last_layer_embed"]
                 embeds.append(slide_embed)
 
             # Stack to [B, D]
-            embeds = torch.stack([e.squeeze(0) if isinstance(e, torch.Tensor) and e.dim() > 1 else e for e in embeds], dim=0)
+            embeds = torch.stack(
+                [e.squeeze(0) if isinstance(e, torch.Tensor) and e.dim() > 1 else e for e in embeds], dim=0
+            )
 
             # Projection head
             embeds = self.head(embeds)
@@ -319,6 +332,6 @@ if __name__ == "__main__":
         embed_dim=128,
         proj="mlp",
         finetune_tile=True,
-        finetune_slide=True,
+        finetune_slide=True,  # LoRA on slide encoder as well
     )
     print_trainable_parameters("gigapath", encoder)
