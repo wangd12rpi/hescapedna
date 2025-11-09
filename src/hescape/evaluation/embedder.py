@@ -89,7 +89,7 @@ def _load_arch_from_hparams(path: Path) -> Dict[str, Any]:
 
         # encoder resource roots used at train time
         "img_enc_path": str(pretrain["img_enc_path"]),
-        "dnameth_enc_path": str(pretrain["gene_enc_path"]),
+        "dnameth_enc_path": "/media/volume/patho_meth/hescapedna/data/cpgpt_files",
     }
     return arch
 

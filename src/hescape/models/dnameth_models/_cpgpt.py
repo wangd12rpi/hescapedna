@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from torch import nn
 
 # CpGPT imports (use your clone; ensure it is importable or on PYTHONPATH)
 from cpgpt.data.components.cpgpt_datasaver import CpGPTDataSaver
@@ -32,8 +33,16 @@ def _unique_linear_leaf_names(module: torch.nn.Module) -> List[str]:
     Collect unique leaf names of nn.Linear modules for robust PEFT LoRA targeting
     (uses endswith matching in PEFT).
     """
+    names = set()
+    for name, m in module.named_modules():
 
-    targets = ["linear1"]
+        leaf = name.split(".")[-1]
+        if leaf:
+            names.add(leaf)
+    targets = sorted(names)
+    print("Unique leaf names for cpgpt encoder:", targets)
+
+    targets = ["self_attn", "linear1", "linear2"]
     return targets
 
 
@@ -59,7 +68,7 @@ class CpGPTRunner:
         lora_dropout: float = 0.1,
         lora_targets: List[str] | None = None,
     ) -> None:
-        model_name = "large"  # enforce for now unless you change config layout
+        model_name = "cancer"  # enforce for now unless you change config layout
         self.root = Path(root).resolve()
         self.dependencies_dir = str(self.root / "dependencies")
         self.human_dir = str(self.root / "dependencies" / "human")

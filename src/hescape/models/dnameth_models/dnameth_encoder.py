@@ -122,7 +122,6 @@ class DnaMethEncoder(nn.Module):
         else:
             # Fast frozen path (cached)
             emb = self.trunk.encode_beta_files(beta_paths).to(self.device)
-
         out = self.head(emb)
         return out
 

@@ -16,17 +16,17 @@ model:
   litmodule:
     img_enc_name: gigapath
     tile_finetune: false
-    slide_finetune: false
+    slide_finetune: true
     gene_finetune: false
-    img_proj: linear
+    img_proj: mlp
     gene_enc_name: cpgpt
-    gene_proj: linear
+    gene_proj: mlp
     loss: CLIP
     temperature: 0.07
 
 datamodule:
   seed: 24442
-  batch_size: 1
+  batch_size: 32
   num_workers: 4
   pin_memory: true
   persistent_workers: true

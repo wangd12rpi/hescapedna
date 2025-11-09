@@ -25,7 +25,7 @@ dataset:
 classifier:
   type: "nn"         # "nn" | "logreg"
   device: "cuda"     # "cuda" | "cpu"
-  hidden_dim: 256    # only used for type="nn"
+  hidden_dim: 512    # only used for type="nn"
   epochs: 50
   batch_size: 64
   lr: 3e-4

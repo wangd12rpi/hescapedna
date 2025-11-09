@@ -550,6 +550,7 @@ def main() -> None:
                 # Align order strictly to the sample_id lists (bugfix)
                 x_train = np.stack([train_vecs_map[sid] for sid in train_ids])
                 x_test = np.stack([test_vecs_map[sid] for sid in test_ids])
+                print(x_train.shape)
 
                 model = _train_classifier(
                     x_train, y_train,

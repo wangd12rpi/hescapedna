@@ -95,14 +95,13 @@ def _unique_linear_leaf_names(module: nn.Module) -> List[str]:
     """
     names: Set[str] = set()
     for name, m in module.named_modules():
-        if isinstance(m, nn.Linear):
-            leaf = name.split(".")[-1]
-            if leaf:
-                names.add(leaf)
+        leaf = name.split(".")[-1]
+        if leaf:
+            names.add(leaf)
     targets = sorted(names)
-    if not targets:
-        # Fallback to a conservative default
-        targets = ["proj", "qkv", "fc", "fc1", "fc2"]
+    print("Unique linear leaf names:", targets)
+
+    targets = ["q_proj", "k_proj", "v_proj", "fc1", "fc2"]
     return targets
 
 
