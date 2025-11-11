@@ -11,7 +11,6 @@ from tqdm import tqdm
 
 from hescape._utils import find_root
 from hescape.evaluation import (
-    ClipFusionEmbeddingExtractor,
     ClipImageEmbeddingExtractor,
     ClipDnaEmbeddingExtractor,
     ClipModelConfig,

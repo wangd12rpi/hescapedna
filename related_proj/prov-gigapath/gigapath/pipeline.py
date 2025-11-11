@@ -160,25 +160,32 @@ def run_inference_with_tile_encoder(image_paths: List[str], tile_encoder: torch.
     return {k: torch.cat(v) for k, v in collated_outputs.items()}
 
 
-def run_inference_with_slide_encoder(tile_embeds: torch.Tensor, coords: torch.Tensor, slide_encoder_model: torch.nn.Module) -> torch.Tensor:
+def run_inference_with_slide_encoder(tile_embeds: torch.Tensor, coords: torch.Tensor, slide_encoder_model: torch.nn.Module, train_mode: bool=False) -> torch.Tensor:
     """
-    Run inference with the slide encoder
+    Run inference with the slide encoder.
 
     Arguments:
     ----------
     tile_embeds : torch.Tensor
-        Tile embeddings
+        Tile embeddings.
     coords : torch.Tensor
-        Coordinates of the tiles
+        Coordinates of the tiles.
     slide_encoder_model : torch.nn.Module
-        Slide encoder model
+        Slide encoder model.
+    train_mode : bool
+        If True, run in training mode (enables gradient flow and train-time layers).
+        If False, run in eval mode.
     """
     if len(tile_embeds.shape) == 2:
         tile_embeds = tile_embeds.unsqueeze(0)
         coords = coords.unsqueeze(0)
 
     slide_encoder_model = slide_encoder_model.cuda()
-    # preserve caller's train/eval mode; do not override here
+    if train_mode:
+        slide_encoder_model.train()
+    else:
+        slide_encoder_model.eval()
+    # run inference
     with torch.cuda.amp.autocast(dtype=torch.float16):
         slide_embeds = slide_encoder_model(tile_embeds.cuda(), coords.cuda(), all_layer_embed=True)
     outputs = {"layer_{}_embed".format(i): slide_embeds[i] for i in range(len(slide_embeds))}

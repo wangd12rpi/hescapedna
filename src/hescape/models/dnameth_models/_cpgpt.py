@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Tuple
 import numpy as np
 import pandas as pd
 import torch
+from torch import nn
 
 # CpGPT imports (use your clone; ensure it is importable or on PYTHONPATH)
 from cpgpt.data.components.cpgpt_datasaver import CpGPTDataSaver
@@ -32,15 +33,16 @@ def _unique_linear_leaf_names(module: torch.nn.Module) -> List[str]:
     Collect unique leaf names of nn.Linear modules for robust PEFT LoRA targeting
     (uses endswith matching in PEFT).
     """
-    names: set[str] = set()
+    names = set()
     for name, m in module.named_modules():
-        if isinstance(m, torch.nn.Linear):
-            leaf = name.split(".")[-1]
-            if leaf:
-                names.add(leaf)
+
+        leaf = name.split(".")[-1]
+        if leaf:
+            names.add(leaf)
     targets = sorted(names)
-    if not targets:
-        targets = ["proj", "qkv", "fc", "fc1", "fc2"]
+    print("Unique leaf names for cpgpt encoder:", targets)
+
+    targets = ["self_attn", "linear1", "linear2"]
     return targets
 
 

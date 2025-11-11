@@ -7,7 +7,7 @@ litmodule:
   gene_enc_name: cpgpt
   loss: SIGLIP
   img_proj: linear # options: "linear", "mlp", "transformer"
-  gene_proj: identity # CpGPT embeddings arrive in final dimension
+  gene_proj: linear # CpGPT embeddings arrive in final dimension
   n_tissue:
   n_region:
   image_size: 224
@@ -16,7 +16,7 @@ litmodule:
   weight_decay: ${model.optimizer.weight_decay}
 
 optimizer:
-  lr: 1e-5 # 0.001
+  lr: 5e-5 # 0.001
   weight_decay: 0.01 # 0.2
 
 cosine_scheduler:
