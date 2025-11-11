@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """
 Create a paired histology + DNA methylation JSONL index from GDC, then split into train and test.
-This version augments each sample with a structured `labels` block for downstream tasks while
-preserving all legacy fields and local paths.
+
+Deterministic split policy:
+- Evaluation projects (default: TCGA-BRCA, TCGA-LUAD) are each split 80/20 at the CASE level.
+- All other TCGA projects go entirely to TRAIN.
+- For speed, we build full labels (clinical, survival, receptors, mutations) ONLY for evaluation projects.
+  Train-only projects are indexed using a fast path from FILES metadata without CASES or other lookups.
 
 Outputs:
 - project_root/data/wsi_dnameth/index_full.jsonl
@@ -11,31 +15,20 @@ Outputs:
 
 Legacy compatibility:
 - slide.local_path and methylation_beta.local_path are unchanged
-- existing keys remain; only a new `labels` key is added per record
-
-Downstream labels added:
-- labels.wsi_slide: morphology, grade, stage, slide QC percents (when available)
-- labels.brca_receptors: ER/PR/HER2 IHC status plus triple_negative flag (BRCA only, from BCR Biotab)
-- labels.mutations: per-gene boolean flags from /analysis/ssm_occurrences
-- labels.survival: vital_status, event, os_days, days_to_last_follow_up, days_to_death
-- labels.exposure: cigarettes_per_day, years_smoked, pack_years_smoked, computed_pack_years
-
-Debugging:
-- pass --debug to print payloads, counts, and first examples for receptor and mutation queries
-- mutation path prints a clear warning and filter payload if everything is False for a cohort
+- existing top-level keys remain; train-only records have an empty 'labels' dict and empty 'diagnosis' dict
 """
 
-import os
+from __future__ import annotations
+
 import json
 import argparse
 import random
-from collections import defaultdict
+from collections import defaultdict, Counter
 from typing import Dict, List, Any, Optional, Set, Iterable, Tuple
 import requests
 from pathlib import Path
 import csv
 import io
-import math
 
 # -----------------------------
 # Project root like original
@@ -72,9 +65,9 @@ def sort_files_first(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def _request_with_retries(method: str, url: str, *, json_body=None, timeout: int = 120, max_retries: int = 5, stream: bool = False) -> requests.Response:
     last_exc = None
-    for attempt in range(max_retries):
+    for _ in range(max_retries):
         try:
-            if method == "POST":
+            if method.upper() == "POST":
                 r = requests.post(url, json=json_body, timeout=timeout, stream=stream)
             else:
                 r = requests.get(url, timeout=timeout, stream=stream)
@@ -122,7 +115,7 @@ def files_for_case(case_id: str, extra_filters: List[Dict[str, Any]], page_size:
     fields = ",".join([
         "file_id","file_name","md5sum","data_category","data_type","data_format",
         "experimental_strategy","workflow_type",
-        "cases.submitter_id","cases.project.project_id",
+        "cases.case_id","cases.submitter_id","cases.project.project_id",
         "cases.samples.submitter_id","cases.samples.sample_type",
         # slide QC nested under samples.portions.slides
         "cases.samples.portions.slides.percent_tumor_cells",
@@ -159,6 +152,36 @@ def fetch_case_labels(case_id: str, timeout: int = 120) -> Dict[str, Any]:
     r = _request_with_retries("POST", CASES, json_body=payload, timeout=timeout)
     hits = r.json().get("data", {}).get("hits", [])
     return hits[0] if hits else {}
+
+def _extract_slide_qc_from_file_record(sample_node: Dict[str, Any]) -> Optional[Dict[str, Optional[float]]]:
+    # sample_node is a cases.samples node from a files hit
+    portions = sample_node.get("portions") or []
+    ptc = psc = ptn = None
+    sloc = None
+    for p in portions:
+        for sl in p.get("slides", []) or []:
+            # take first non null, or keep max tumor percent if multiple
+            if sl.get("percent_tumor_cells") is not None:
+                ptc = max(ptc, sl.get("percent_tumor_cells")) if ptc is not None else sl.get("percent_tumor_cells")
+            if sl.get("percent_stromal_cells") is not None:
+                psc = max(psc, sl.get("percent_stromal_cells")) if psc is not None else sl.get("percent_stromal_cells")
+            if sl.get("percent_tumor_nuclei") is not None:
+                ptn = max(ptn, sl.get("percent_tumor_nuclei")) if ptn is not None else sl.get("percent_tumor_nuclei")
+            if sl.get("section_location") and sloc is None:
+                sloc = sl.get("section_location")
+    if ptc is None and psc is None and ptn is None and sloc is None:
+        return None
+    return {
+        "percent_tumor_cells": ptc,
+        "percent_stromal_cells": psc,
+        "percent_tumor_nuclei": ptn,
+        "section_location": sloc
+    }
+
+def _patient_barcode_from_sample(sample_submitter_id: str) -> str:
+    # TCGA-XX-YYYY-... -> TCGA-XX-YYYY
+    parts = (sample_submitter_id or "").split("-")
+    return "-".join(parts[:3]) if len(parts) >= 3 else sample_submitter_id
 
 def _attach(grouped, meta: Dict[str, Any], key: str) -> None:
     attached = False
@@ -206,36 +229,6 @@ def _local_name_from_filename(file_name: str) -> str:
     if file_name.endswith(".gz") and not file_name.endswith(".tar.gz"):
         return file_name[:-3]
     return file_name
-
-def _extract_slide_qc_from_file_record(sample_node: Dict[str, Any]) -> Optional[Dict[str, Optional[float]]]:
-    # sample_node is a cases.samples node from a files hit
-    portions = sample_node.get("portions") or []
-    ptc = psc = ptn = None
-    sloc = None
-    for p in portions:
-        for sl in p.get("slides", []) or []:
-            # take first non null, or keep max tumor percent if multiple
-            if sl.get("percent_tumor_cells") is not None:
-                ptc = max(ptc, sl.get("percent_tumor_cells")) if ptc is not None else sl.get("percent_tumor_cells")
-            if sl.get("percent_stromal_cells") is not None:
-                psc = max(psc, sl.get("percent_stromal_cells")) if psc is not None else sl.get("percent_stromal_cells")
-            if sl.get("percent_tumor_nuclei") is not None:
-                ptn = max(ptn, sl.get("percent_tumor_nuclei")) if ptn is not None else sl.get("percent_tumor_nuclei")
-            if sl.get("section_location") and sloc is None:
-                sloc = sl.get("section_location")
-    if ptc is None and psc is None and ptn is None and sloc is None:
-        return None
-    return {
-        "percent_tumor_cells": ptc,
-        "percent_stromal_cells": psc,
-        "percent_tumor_nuclei": ptn,
-        "section_location": sloc
-    }
-
-def _patient_barcode_from_sample(sample_submitter_id: str) -> str:
-    # TCGA-XX-YYYY-... -> TCGA-XX-YYYY
-    parts = (sample_submitter_id or "").split("-")
-    return "-".join(parts[:3]) if len(parts) >= 3 else sample_submitter_id
 
 # -----------------------------
 # BRCA receptor status from BCR Biotab
@@ -286,8 +279,7 @@ def load_bcr_biotab_receptors(project_id: str, page_size: int, timeout: int = 12
 
     if pick is None:
         if debug:
-            print("[DEBUG] BRCA Biotab not found under Clinical Supplement BCR Biotab. Filters used:")
-            print(json.dumps(filters, indent=2))
+            print("[DEBUG] BRCA Biotab not found under Clinical Supplement BCR Biotab.")
         return {}
 
     text = _download_text_file(pick["file_id"], timeout=timeout)
@@ -315,13 +307,13 @@ def load_bcr_biotab_receptors(project_id: str, page_size: int, timeout: int = 12
             "triple_negative": triple
         }
     if debug:
-        print(f"[DEBUG] Parsed BRCA Biotab receptors for {len(out)} patients from {pick.get('file_name')}")
+        print(f"[DEBUG] Parsed BRCA Biotab receptors for {len(out)} patients")
     return out
 
 # -----------------------------
 # Mutations via /analysis/ssm_occurrences
 # -----------------------------
-def default_gene_panel_for_project(project_id: str) -> List[str]:
+def default_gene_panel_for_project(project_id: Optional[str]) -> List[str]:
     pj = (project_id or "").upper()
     if pj == "TCGA-BRCA":
         return ["TP53","PIK3CA","GATA3","MAP3K1","CDH1","PTEN","AKT1","MAP2K4","RB1","ERBB2"]
@@ -402,23 +394,57 @@ def fetch_mutation_presence(
     if debug:
         pos = sum(sum(1 for v in d.values() if v) for d in out.values())
         print(f"[mut] cases={len(case_ids)} genes={len(gene_panel)} hits={len(hits)} positives={pos}")
-        # Show one positive example if present
-        for cid, flags in out.items():
-            genes_pos = [g for g, v in flags.items() if v]
-            if genes_pos:
-                print(f"[mut] example {cid}: {genes_pos[:8]}")
-                break
         if pos == 0:
-            print("[mut][warn] All False. Dumping payload for inspection:")
-            print(json.dumps(payload, indent=2))
+            print("[mut][warn] All False for provided case set")
 
+    return out
+
+# -----------------------------
+# Case → Project mapping (batched)
+# -----------------------------
+def map_case_to_project(case_ids: List[str], page_size: int, timeout: int = 120) -> Dict[str, str]:
+    """
+    Return mapping case_id -> project_id using a single FILES query over Slide Image entries.
+    """
+    if not case_ids:
+        return {}
+    filters = {
+        "op": "and",
+        "content": [
+            {"op": "in", "content": {"field": "cases.case_id", "value": case_ids}},
+            {"op": "in", "content": {"field": "data_type", "value": ["Slide Image"]}},
+        ],
+    }
+    fields = "cases.case_id,cases.project.project_id"
+    payload = {"filters": filters, "fields": fields}
+    hits = gdc_post_all(FILES, payload, page_size, timeout)
+    out: Dict[str, str] = {}
+    for h in hits:
+        for c in h.get("cases", []) or []:
+            cid = c.get("case_id")
+            proj = ((c.get("project") or {}).get("project_id")) or None
+            if cid and proj:
+                out[cid] = proj
     return out
 
 # -----------------------------
 # Build per-case records
 # -----------------------------
-def build_records_for_case(case_id: str, page_size: int, receptor_map: Dict[str, Dict[str, Optional[str]]],
-                           mut_index: Dict[str, Dict[str, bool]], timeout: int = 120) -> List[Dict[str, Any]]:
+def build_records_for_case(
+    case_id: str,
+    page_size: int,
+    receptor_map: Optional[Dict[str, Dict[str, Optional[str]]]],
+    mut_index: Optional[Dict[str, Dict[str, bool]]],
+    *,
+    timeout: int = 120,
+    fast: bool = False,
+    project_hint: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Build sample-level records for a case.
+    - fast=False: full labels via CASES + (optional) receptor_map & mut_index
+    - fast=True: minimal record built directly from FILES metadata; labels={}, diagnosis={}
+    """
     # Files
     slide_meta = files_for_case(case_id, [
         {"op": "in", "content": {"field": "data_type", "value": ["Slide Image"]}}
@@ -440,7 +466,53 @@ def build_records_for_case(case_id: str, page_size: int, receptor_map: Dict[str,
     if not candidates:
         return []
 
-    # Clinical labels
+    # --- Fast path for train-only projects ---
+    if fast:
+        # Determine project_id from slide_meta if not provided
+        proj_id = project_hint
+        if proj_id is None:
+            for m in slide_meta:
+                for c in m.get("cases", []) or []:
+                    p = ((c.get("project") or {}).get("project_id")) or None
+                    if p:
+                        proj_id = p
+                        break
+                if proj_id:
+                    break
+
+        records: List[Dict[str, Any]] = []
+        for sample_id, grp in candidates.items():
+            slide = sort_files_first(grp["slides"])[0]
+            beta  = sort_files_first(grp["betas"])[0]
+
+            slide_name = slide.get("file_name") or slide["file_id"]
+            beta_name  = beta.get("file_name") or beta["file_id"]
+            slide_local = f"{sample_id}/{_local_name_from_filename(slide_name)}"
+            beta_local  = f"{sample_id}/{_local_name_from_filename(beta_name)}"
+
+            slide_out = dict(slide)
+            slide_out["local_path"] = slide_local
+            beta_out = dict(beta)
+            beta_out["local_path"] = beta_local
+
+            rec = {
+                "case_id": case_id,
+                "case_submitter_id": None,
+                "project_id": proj_id,
+                "primary_site": None,
+                "disease_type": None,
+                "diagnosis": {},  # intentionally empty on fast path
+                "sample_submitter_id": sample_id,
+                "sample_type": grp.get("sample_type"),
+                "binary_label": tumor_normal_binary(grp.get("sample_type")),
+                "slide": slide_out,
+                "methylation_beta": beta_out,
+                "labels": {}      # intentionally minimal
+            }
+            records.append(rec)
+        return records
+
+    # --- Full path for evaluation projects ---
     case_meta = fetch_case_labels(case_id, timeout=timeout)
     case_submitter = case_meta.get("submitter_id")
     project_id = (case_meta.get("project") or {}).get("project_id")
@@ -512,8 +584,8 @@ def build_records_for_case(case_id: str, page_size: int, receptor_map: Dict[str,
                 "section_location": sloc
             }
 
-    # Mutation flags for this case_id
-    mutations_for_case = mut_index.get(case_id) or {}
+    # Mutation flags for this case_id (only provided for eval sets)
+    mutations_for_case = (mut_index or {}).get(case_id) or {}
 
     records: List[Dict[str, Any]] = []
     for sample_id, grp in candidates.items():
@@ -534,9 +606,9 @@ def build_records_for_case(case_id: str, page_size: int, receptor_map: Dict[str,
         beta_out = dict(beta)
         beta_out["local_path"] = beta_local
 
-        # BRCA receptors, patient-level
+        # BRCA receptors, patient-level (only for BRCA)
         patient_barcode = _patient_barcode_from_sample(sample_id)
-        brca_rec = receptor_map.get(patient_barcode) if receptor_map else None
+        brca_rec = (receptor_map or {}).get(patient_barcode) if project_id == "TCGA-BRCA" else None
 
         # Compose labels block
         labels = {
@@ -586,17 +658,19 @@ def build_records_for_case(case_id: str, page_size: int, receptor_map: Dict[str,
 # Main
 # -----------------------------
 def main():
-    parser = argparse.ArgumentParser(description="Build paired WSI + DNA methylation index and add downstream labels.")
-    parser.add_argument("--project_id", type=str, default="TCGA-BRCA", help="TCGA project id or None for all TCGA")
+    parser = argparse.ArgumentParser(
+        description="Build paired WSI + DNA methylation index and add downstream labels with project-specific split."
+    )
     parser.add_argument("--program", type=str, default="TCGA", help="Program filter")
-    parser.add_argument("--max_cases", type=int, default=None, help="Optional limit on number of paired cases")
+    parser.add_argument("--project_id", type=str, default=None, help="TCGA project id (e.g., TCGA-BRCA). Default None means all TCGA projects.")
+    parser.add_argument("--eval_projects", type=str, default="TCGA-BRCA,TCGA-LUAD", help="Comma-separated TCGA projects to split 80/20 and include full labels.")
+    parser.add_argument("--eval_split_frac", type=float, default=0.2, help="Test fraction for each eval project (case-level).")
+    parser.add_argument("--eval_split_seed", type=int, default=1337, help="Random seed for deterministic eval project split.")
+    parser.add_argument("--max_cases", type=int, default=None, help="Optional limit on number of paired cases (applied before record expansion)")
     parser.add_argument("--api_page_size", type=int, default=1000)
-    parser.add_argument("--train_frac", type=float, default=0.8, help="Train fraction for split")
-    parser.add_argument("--seed", type=int, default=1337, help="Random seed for splitting")
-    parser.add_argument("--split_unit", type=str, choices=["case","sample"], default="case", help="Split unit")
     parser.add_argument("--timeout", type=int, default=180, help="HTTP timeout seconds")
-    parser.add_argument("--debug", action="store_false", help="Print extra debugging info for clinical and mutation lookups")
-    parser.add_argument("--mut_genes", type=str, default="", help="Comma separated custom gene panel to query in ssm_occurrences")
+    parser.add_argument("--debug", action="store_true", help="Print extra debugging info for clinical and mutation lookups")
+    parser.add_argument("--mut_genes", type=str, default="", help="Comma separated custom gene panel to query in ssm_occurrences (only for eval cases)")
     args = parser.parse_args()
 
     data_root = project_root / "data/wsi_dnameth"
@@ -605,7 +679,10 @@ def main():
     ensure_dir(train_dir)
     ensure_dir(test_dir)
 
-    # Find paired cases
+    # Parse eval projects
+    eval_projects: Set[str] = {p.strip().upper() for p in (args.eval_projects or "").split(",") if p.strip()}
+
+    # Find paired cases (within a project if provided, otherwise across all TCGA)
     slide_cases = fetch_case_ids_with(
         {"op": "in", "content": {"field": "data_type", "value": ["Slide Image"]}},
         program=args.program, project_id=args.project_id, page_size=args.api_page_size, timeout=args.timeout
@@ -617,67 +694,124 @@ def main():
         ]},
         program=args.program, project_id=args.project_id, page_size=args.api_page_size, timeout=args.timeout
     )
-    paired_cases = sorted(slide_cases & beta_cases)
+    paired_cases_all = sorted(slide_cases & beta_cases)
     if args.max_cases is not None:
-        paired_cases = paired_cases[:args.max_cases]
+        paired_cases_all = paired_cases_all[:args.max_cases]
 
-    print(f"Found {len(paired_cases)} paired cases" + (f" in project {args.project_id}" if args.project_id else ""))
+    scope = args.project_id if args.project_id else "ALL TCGA"
+    print(f"Found {len(paired_cases_all)} paired cases in scope: {scope}")
 
-    # Prepare downstream label sources
-    receptor_map: Dict[str, Dict[str, Optional[str]]] = load_bcr_biotab_receptors(
-        args.project_id, page_size=args.api_page_size, timeout=args.timeout, debug=args.debug
-    )
+    # Map case -> project (batched, fast)
+    case_to_project = map_case_to_project(paired_cases_all, page_size=args.api_page_size, timeout=args.timeout)
+    if not case_to_project:
+        print("Warning: could not map cases to projects; proceeding but splits may be empty.")
 
-    # Mutation panel
+    # Partition into eval vs train-only cases
+    eval_case_ids = [cid for cid in paired_cases_all if case_to_project.get(cid, "").upper() in eval_projects]
+    train_only_case_ids = [cid for cid in paired_cases_all if case_to_project.get(cid, "").upper() not in eval_projects]
+
+    eval_projects_present = sorted({case_to_project.get(cid, "") for cid in eval_case_ids if case_to_project.get(cid, "")})
+    print(f"Eval projects present: {eval_projects_present} (cases: {len(eval_case_ids)})")
+    print(f"Train-only cases: {len(train_only_case_ids)}")
+
+    # Prepare downstream label sources ONLY for eval projects
+    receptor_map: Dict[str, Dict[str, Optional[str]]] = {}
+    if "TCGA-BRCA" in eval_projects and any(case_to_project.get(cid, "") == "TCGA-BRCA" for cid in eval_case_ids):
+        receptor_map = load_bcr_biotab_receptors("TCGA-BRCA", page_size=args.api_page_size, timeout=args.timeout, debug=args.debug)
+
+    # Mutation panel for eval cases
     if args.mut_genes.strip():
         gene_panel = [g.strip().upper() for g in args.mut_genes.split(",") if g.strip()]
     else:
-        gene_panel = default_gene_panel_for_project(args.project_id)
+        # When multiple eval projects are present, use pan-cancer set
+        gene_panel = default_gene_panel_for_project(args.project_id if args.project_id in eval_projects else None)
 
     mut_index: Dict[str, Dict[str, bool]] = {}
-    if paired_cases and gene_panel:
-        mut_index = fetch_mutation_presence(paired_cases, gene_panel, page_size=args.api_page_size, timeout=args.timeout, debug=args.debug)
+    if eval_case_ids and gene_panel:
+        mut_index = fetch_mutation_presence(eval_case_ids, gene_panel, page_size=args.api_page_size, timeout=args.timeout, debug=args.debug)
 
     # Build full record list
     full_records: List[Dict[str, Any]] = []
-    for i, cid in enumerate(paired_cases, 1):
-        print(f"[{i}/{len(paired_cases)}] case {cid}")
-        recs = build_records_for_case(cid, page_size=args.api_page_size, receptor_map=receptor_map, mut_index=mut_index, timeout=args.timeout)
+
+    # Eval cases: full labels
+    for i, cid in enumerate(eval_case_ids, 1):
+        if i % 10 == 1 or i == len(eval_case_ids):
+            print(f"[eval {i}/{len(eval_case_ids)}] case {cid}")
+        recs = build_records_for_case(
+            cid,
+            page_size=args.api_page_size,
+            receptor_map=receptor_map,
+            mut_index=mut_index,
+            timeout=args.timeout,
+            fast=False,
+            project_hint=case_to_project.get(cid)
+        )
+        full_records.extend(recs)
+
+    # Train-only cases: fast path
+    for i, cid in enumerate(train_only_case_ids, 1):
+        if i % 50 == 1 or i == len(train_only_case_ids):
+            print(f"[train-only {i}/{len(train_only_case_ids)}] case {cid}")
+        recs = build_records_for_case(
+            cid,
+            page_size=args.api_page_size,
+            receptor_map=None,
+            mut_index=None,
+            timeout=args.timeout,
+            fast=True,
+            project_hint=case_to_project.get(cid)
+        )
         full_records.extend(recs)
 
     # Write full JSONL
+    data_root = project_root / "data/wsi_dnameth"
     full_path = data_root / "index_full.jsonl"
     with full_path.open("w") as fout:
         for rec in full_records:
             fout.write(json.dumps(rec) + "\n")
-    print(f"Wrote {full_path.relative_to(project_root)}")
+    print(f"Wrote {full_path.relative_to(project_root)} with {len(full_records)} records")
 
-    # Split
-    if args.split_unit == "case":
-        # keep cases intact across splits
-        case_to_recs: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        for rec in full_records:
-            case_to_recs[rec["case_id"]].append(rec)
-        case_ids = list(case_to_recs.keys())
-        rng = random.Random(args.seed)
+    # -----------------------------
+    # Split: eval projects 80/20 by CASE; others all train
+    # -----------------------------
+    # First, collect records by project and case for eval projects
+    eval_proj_set = set(eval_projects)
+    project_case_to_recs: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    other_records: List[Dict[str, Any]] = []
+
+    for rec in full_records:
+        proj = (rec.get("project_id") or "").upper()
+        cid  = rec.get("case_id")
+        if proj in eval_proj_set:
+            project_case_to_recs[(proj, cid)].append(rec)
+        else:
+            other_records.append(rec)  # always train
+
+    # Split per eval project
+    rng = random.Random(args.eval_split_seed)
+    train_records: List[Dict[str, Any]] = []
+    test_records: List[Dict[str, Any]] = []
+
+    # Add all train-only (non-eval) records to train
+    train_records.extend(other_records)
+
+    # Now each eval project gets its own 80/20 split by case
+    projects_in_records = sorted({proj for (proj, _cid) in project_case_to_recs.keys()})
+    for proj in projects_in_records:
+        case_ids = [cid for (p, cid) in project_case_to_recs.keys() if p == proj]
         rng.shuffle(case_ids)
-        n_train = max(1, int(round(len(case_ids) * args.train_frac))) if case_ids else 0
-        train_cases = set(case_ids[:n_train])
-        train_records = [r for r in full_records if r["case_id"] in train_cases]
-        test_records  = [r for r in full_records if r["case_id"] not in train_cases]
-    else:
-        # sample-level shuffle
-        rng = random.Random(args.seed)
-        idxs = list(range(len(full_records)))
-        rng.shuffle(idxs)
-        n_train = max(1, int(round(len(full_records) * args.train_frac))) if full_records else 0
-        train_idx = set(idxs[:n_train])
-        train_records = [full_records[i] for i in range(len(full_records)) if i in train_idx]
-        test_records  = [full_records[i] for i in range(len(full_records)) if i not in train_idx]
+        n_test = max(1, int(round(len(case_ids) * args.eval_split_frac))) if case_ids else 0
+        test_cases = set(case_ids[:n_test])
+        for cid in case_ids:
+            recs = project_case_to_recs[(proj, cid)]
+            if cid in test_cases:
+                test_records.extend(recs)
+            else:
+                train_records.extend(recs)
 
     # Write split JSONLs
-    train_index = train_dir / "index.jsonl"
-    test_index  = test_dir / "index.jsonl"
+    train_index = (project_root / "data" / "wsi_dnameth" / "train" / "index.jsonl")
+    test_index  = (project_root / "data" / "wsi_dnameth" / "test"  / "index.jsonl")
 
     with train_index.open("w") as ft:
         for rec in train_records:
@@ -686,8 +820,24 @@ def main():
         for rec in test_records:
             fs.write(json.dumps(rec) + "\n")
 
+    # Summary
+    def summarize(records: List[Dict[str, Any]]) -> Counter:
+        return Counter([(r.get("project_id") or "UNKNOWN") for r in records])
+
+    train_summary = summarize(train_records)
+    test_summary = summarize(test_records)
+
     print(f"Wrote {train_index.relative_to(project_root)} with {len(train_records)} samples")
     print(f"Wrote {test_index.relative_to(project_root)} with {len(test_records)} samples")
+
+    if train_summary:
+        print("Train split by project:")
+        for p, n in sorted(train_summary.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f"  {p}: {n}")
+    if test_summary:
+        print("Test split by project:")
+        for p, n in sorted(test_summary.items(), key=lambda kv: (-kv[1], kv[0])):
+            print(f"  {p}: {n}")
 
 if __name__ == "__main__":
     main()
